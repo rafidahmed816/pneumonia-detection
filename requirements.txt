@@ -1,0 +1,8 @@
+mkdocs
+pip
+python-dotenv
+ruff
+-e .
+pandas
+numpy
+matplotlib
