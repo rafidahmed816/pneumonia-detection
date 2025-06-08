@@ -6,3 +6,8 @@ ruff
 pandas
 numpy
 matplotlib
+torch
+torchvision
+pillow
+tqdm
+scikit-learn
