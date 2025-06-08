@@ -11,11 +11,17 @@ PYTHON_INTERPRETER = python3
 #################################################################################
 
 
+## Create Python virtual environment
+.PHONY: venv
+venv:
+	python3.12 -m venv venv
+	@echo "Virtual environment created. To activate, run: source venv/bin/activate"
+
 ## Install Python dependencies
 .PHONY: requirements
-requirements:
-	$(PYTHON_INTERPRETER) -m pip install -U pip
-	$(PYTHON_INTERPRETER) -m pip install -r requirements.txt
+requirements: venv
+	. venv/bin/activate && pip install --upgrade pip
+	. venv/bin/activate && pip install -r requirements.txt
 	
 
 
@@ -44,12 +50,6 @@ format:
 run:
 	$(PYTHON_INTERPRETER) -m pneumonia_detection.main
 
-## Create virtual environment using built-in venv
-.PHONY: venv
-venv:
-	$(PYTHON_INTERPRETER) -m venv venv
-	@echo ">>> Virtualenv created. Activate it with:\nsource venv/bin/activate"
-
 ## Load environment variables
 .PHONY: dotenv
 dotenv:
@@ -64,6 +64,10 @@ create_environment:
 	
 
 
+## Run training
+.PHONY: train
+train:
+	. venv/bin/activate && python -m pneumonia_detection.main
 
 #################################################################################
 # PROJECT RULES                                                                 #
