@@ -1,7 +1,7 @@
 import torch
-from dataset import get_dataloaders
-from modeling.model import PneumoniaModel
-from modeling.train import train_model
+from .dataset import get_dataloaders
+from .modeling.model import PneumoniaModel
+from .modeling.train import train_model
 
 def main():
     # Set device
