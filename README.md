@@ -1,66 +1,103 @@
-# pneumonia detection
+# Pneumonia Detection from Chest X-Rays
 
 <a target="_blank" href="https://cookiecutter-data-science.drivendata.org/">
     <img src="https://img.shields.io/badge/CCDS-Project%20template-328F97?logo=cookiecutter" />
 </a>
 
-Pneumonia Detection From Chest X -Ray
+A deep learning project for detecting pneumonia from chest X-ray images.
 
-# How to run this project?
-make venv
-source venv/bin/activate
-make requirements
+
+### Installation
+
+1. Clone the repository:
+```bash
+git clone https://github.com/rafidahmed816/pneumonia-detection.git
+cd pneumonia-detection
+```
+
+2. Create and activate a virtual environment:
+
+For Windows:
+```bash
+python -m venv venv
+venv\Scripts\activate
+
+3. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+### Dataset Setup
+
+1. Create the following directory structure:
+```
+data/
+└── chest_xray/
+    ├── train/
+    │   ├── NORMAL/
+    │   └── PNEUMONIA/
+    ├── val/
+    │   ├── NORMAL/
+    │   └── PNEUMONIA/
+    └── test/
+        ├── NORMAL/
+        └── PNEUMONIA/
+```
+
+2. Place your chest X-ray images in the respective folders:
+   - NORMAL: Contains normal chest X-ray images
+   - PNEUMONIA: Contains pneumonia chest X-ray images
+
+## Running the Project
+
+### 1. Dataset Visualization
+
+To visualize the dataset distribution and sample images:
+```bash
+python -m pneumonia_detection.visualize_dataset
+```
+
+This will generate:
+- Dataset statistics in the console
+- Distribution plots in `reports/figures/dataset_distribution.png`
+- Sample images with details in `reports/figures/sample_images.png`
+
+### 2. Training the Model
+
+To train the pneumonia detection model:
+```bash
+python -m pneumonia_detection.main
+```
+
+The training process will:
+- Use ResNet18 pretrained model
+- Train for 30 epochs
+- Apply data augmentation (random flips and rotations)
+- Save the best model in `models/best_model.pth`
+- Display training progress with accuracy and loss metrics
+
+## Model Architecture
+
+- Base: ResNet18 (pretrained)
+- Modifications:
+  - Custom classifier layer
+  - Dropout for regularization
+  - Binary classification (Normal vs Pneumonia)
 
 ## Project Organization
-
 ```
-├── LICENSE            <- Open-source license if one is chosen
-├── Makefile           <- Makefile with convenience commands like `make data` or `make train`
-├── README.md          <- The top-level README for developers using this project.
-├── data
-│   ├── external       <- Data from third party sources.
-│   ├── interim        <- Intermediate data that has been transformed.
-│   ├── processed      <- The final, canonical data sets for modeling.
-│   └── raw            <- The original, immutable data dump.
-│
-├── docs               <- A default mkdocs project; see www.mkdocs.org for details
-│
-├── models             <- Trained and serialized models, model predictions, or model summaries
-│
-├── notebooks          <- Jupyter notebooks. Naming convention is a number (for ordering),
-│                         the creator's initials, and a short `-` delimited description, e.g.
-│                         `1.0-jqp-initial-data-exploration`.
-│
-├── pyproject.toml     <- Project configuration file with package metadata for 
-│                         pneumonia-detection and configuration for tools like black
-│
-├── references         <- Data dictionaries, manuals, and all other explanatory materials.
-│
-├── reports            <- Generated analysis as HTML, PDF, LaTeX, etc.
-│   └── figures        <- Generated graphics and figures to be used in reporting
-│
-├── requirements.txt   <- The requirements file for reproducing the analysis environment, e.g.
-│                         generated with `pip freeze > requirements.txt`
-│
-├── setup.cfg          <- Configuration file for flake8
-│
-└── pneumonia-detection   <- Source code for use in this project.
-    │
-    ├── __init__.py             <- Makes pneumonia-detection a Python module
-    │
-    ├── config.py               <- Store useful variables and configuration
-    │
-    ├── dataset.py              <- Scripts to download or generate data
-    │
-    ├── features.py             <- Code to create features for modeling
-    │
-    ├── modeling                
-    │   ├── __init__.py 
-    │   ├── predict.py          <- Code to run model inference with trained models          
-    │   └── train.py            <- Code to train models
-    │
-    └── plots.py                <- Code to create visualizations
+├── LICENSE            <- Open-source license
+├── Makefile           <- Makefile with commands like `make data` or `make train`
+├── README.md          <- The top-level README for developers
+├── data               <- Dataset directory
+├── docs               <- Documentation directory
+├── models             <- Trained and serialized models
+├── notebooks          <- Jupyter notebooks
+├── pneumonia_detection <- Source code directory
+├── references         <- Data dictionaries, manuals, etc.
+├── reports            <- Generated analysis reports and figures
+├── requirements.txt   <- Project dependencies
+└── pyproject.toml     <- Project configuration file
 ```
 
---------
 
