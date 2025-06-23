@@ -70,7 +70,7 @@ python -m pneumonia_detection.main
 ```
 
 The training process will:
-- Use ResNet18 pretrained model
+- trained model on the training set
 - Train for 30 epochs
 - Apply data augmentation (random flips and rotations)
 - Save the best model in `models/best_model.pth`
@@ -78,7 +78,7 @@ The training process will:
 
 ## Model Architecture
 
-- Base: ResNet18 (pretrained)
+- trained model
 - Modifications:
   - Custom classifier layer
   - Dropout for regularization
