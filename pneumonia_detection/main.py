@@ -11,11 +11,11 @@ def main():
     # Get data loaders
     train_loader, val_loader, test_loader = get_dataloaders()
     
-    # Initialize model
-    model = PneumoniaModel().to(device)
+    # # Initialize model
+    # model = PneumoniaModel().to(device)
     
-    # Train model
-    train_model(model, train_loader, val_loader, device)
+    # # Train model
+    # train_model(model, train_loader, val_loader, device)
     
     print('Training completed!')
 
