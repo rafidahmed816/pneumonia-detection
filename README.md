@@ -15,6 +15,11 @@ git clone https://github.com/rafidahmed816/pneumonia-detection.git
 cd pneumonia-detection
 ```
 ### for cuda:
+1st uninstall torch:
+pip uninstall torch torchvision torchaudio
+
+then run:
+
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 
 
