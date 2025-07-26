@@ -16,6 +16,9 @@ cd pneumonia-detection
 ```
 ### for cuda:
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+
+
+
 2. Create and activate a virtual environment:
 
 For Windows:
