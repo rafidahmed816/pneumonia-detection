@@ -14,14 +14,6 @@ A deep learning project for detecting pneumonia from chest X-ray images.
 git clone https://github.com/rafidahmed816/pneumonia-detection.git
 cd pneumonia-detection
 ```
-### for cuda:
-1st uninstall torch:
-pip uninstall torch torchvision torchaudio
-
-then run:
-
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-
 
 
 2. Create and activate a virtual environment:
@@ -35,6 +27,16 @@ venv\Scripts\activate
 ```bash
 pip install -r requirements.txt
 ```
+
+## for cuda:
+1st uninstall torch:
+pip uninstall torch torchvision torchaudio
+
+then run:
+
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+
+
 
 ### Dataset Setup
 
