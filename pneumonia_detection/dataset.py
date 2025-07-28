@@ -32,6 +32,7 @@ class ChestXRayDataset(Dataset):
         img_path = self.images[idx]
         image = Image.open(img_path).convert("RGB")
         label = self.labels[idx]
+        label = torch.tensor(label, dtype=torch.float32).unsqueeze(0)
 
         if self.transform:
             image = self.transform(image)
