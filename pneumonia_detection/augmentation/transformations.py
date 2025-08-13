@@ -1,23 +1,21 @@
 from torchvision import transforms
+from pneumonia_detection.config import IMAGE_SIZE
 
-# Constants
-IMAGE_SIZE = 150
-
-# ✅ Safer medical augmentation for training
+# Training-time augmentation (safe for chest X-rays)
 train_transform = transforms.Compose([
-    transforms.Grayscale(num_output_channels=1),  # Convert to grayscale with 1 channel
-    transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),  # Resize images to the target size
-    transforms.RandomHorizontalFlip(p=0.5),      # Randomly flip images horizontally (50% chance)
-    transforms.RandomRotation(degrees=3),         # Slight random rotation for better generalization
-    transforms.RandomAffine(degrees=0, translate=(0.03, 0.03)),  # Minor shifts in images
-    transforms.ToTensor(),                       # Convert image to tensor
-    transforms.Normalize(mean=[0.5], std=[0.5])   # Normalize to have values between [-1, 1]
+    transforms.Grayscale(num_output_channels=1),
+    transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
+    transforms.RandomHorizontalFlip(p=0.5),
+    transforms.RandomRotation(degrees=3),
+    transforms.RandomAffine(degrees=0, translate=(0.03, 0.03)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.5], std=[0.5]),
 ])
 
-# ✅ Clean pipeline for validation and testing (no augmentation)
+# Validation/Test (no augmentation)
 test_val_transform = transforms.Compose([
-    transforms.Grayscale(num_output_channels=1),  # Ensure grayscale for consistency
-    transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),  # Resize images to the target size
-    transforms.ToTensor(),                       # Convert image to tensor
-    transforms.Normalize(mean=[0.5], std=[0.5])   # Normalize to have values between [-1, 1]
+    transforms.Grayscale(num_output_channels=1),
+    transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.5], std=[0.5]),
 ])
