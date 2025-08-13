@@ -1,105 +1,65 @@
-# pneumonia_detection/trainer.py
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from collections import Counter
-import sys
-from pathlib import Path
-
-# Add parent directory to sys.path
-sys.path.append(str(Path().resolve().parent.parent))
 from pneumonia_detection.config import LEARNING_RATE, NUM_EPOCHS
 
+def _class_weights_from_dataset(dataset, device):
+    counts = Counter(dataset.labels)  # uses dataset.labels list
+    total = counts[0] + counts[1]
+    weights = torch.tensor([total / counts[0], total / counts[1]], dtype=torch.float32, device=device)
+    return weights
 
-def calculate_class_weights(dataset, device):
-    labels = [label for _, label in dataset]
-    class_counts = Counter(labels)
-    total = sum(class_counts.values())
-    weights = [total / class_counts[i] for i in range(2)]
-    return torch.FloatTensor(weights).to(device)
+def _bce_loss():
+    # per-sample BCE so we can reweight
+    return nn.BCELoss(reduction="none")
 
+def _epoch(model, loader, device, criterion, class_w, train=True, optimizer=None):
+    model.train() if train else model.eval()
+    total_loss, correct, total = 0.0, 0, 0
 
-def get_loss_fn(class_weights):
-    return nn.BCELoss(reduction="none"), class_weights
-
-
-def train(model, loader, optimizer, criterion, class_weights, device):
-    model.train()
-    total_loss, correct = 0, 0
+    torch.set_grad_enabled(train)
     for images, labels in loader:
         images = images.to(device)
-        labels = labels.to(device).float().unsqueeze(1)
+        labels = labels.to(device).float().unsqueeze(1)  # (N,1)
 
-        optimizer.zero_grad()
-        outputs = model(images)
-        loss = criterion(outputs, labels)
-        weighted_loss = (
-            loss * labels * class_weights[1] + loss * (1 - labels) * class_weights[0]
-        ).mean()
-        weighted_loss.backward()
-        optimizer.step()
+        if train:
+            optimizer.zero_grad()
 
-        total_loss += weighted_loss.item()
+        outputs = model(images)                          # (N,1) sigmoid
+        loss = criterion(outputs, labels)                # (N,1)
+        # reweight positives/negatives
+        weighted = loss * (labels * class_w[1] + (1 - labels) * class_w[0])
+        batch_loss = weighted.mean()
+
+        if train:
+            batch_loss.backward()
+            optimizer.step()
+
+        total_loss += batch_loss.item()
         preds = (outputs > 0.5).float()
         correct += (preds == labels).sum().item()
+        total += labels.numel()
 
-    accuracy = correct / len(loader.dataset)
-    return total_loss / len(loader), accuracy
+    return total_loss / len(loader), correct / total
 
-
-def validate(model, loader, criterion, class_weights, device):
-    model.eval()
-    total_loss, correct = 0, 0
-    with torch.no_grad():
-        for images, labels in loader:
-            images = images.to(device)
-            labels = labels.to(device).float().unsqueeze(1)
-
-            outputs = model(images)
-            loss = criterion(outputs, labels)
-            weighted_loss = (
-                loss * labels * class_weights[1]
-                + loss * (1 - labels) * class_weights[0]
-            ).mean()
-
-            total_loss += weighted_loss.item()
-            preds = (outputs > 0.5).float()
-            correct += (preds == labels).sum().item()
-
-    accuracy = correct / len(loader.dataset)
-    return total_loss / len(loader), accuracy
-
-
-def run_training(
-    model, train_loader, val_loader, device, save_path="best_cnn_model.pth"
-):
+def run_training(model, train_loader, val_loader, device, save_path="best_cnn_model.pth"):
+    criterion = _bce_loss()
+    class_w = _class_weights_from_dataset(train_loader.dataset, device)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode="max", patience=2, factor=0.5
-    )
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="max", factor=0.5, patience=2)
 
-    class_weights = calculate_class_weights(train_loader.dataset, device)
-    criterion, class_weights = get_loss_fn(class_weights)
-
-    best_val_acc = 0.0
+    best_val = 0.0
     for epoch in range(1, NUM_EPOCHS + 1):
-        train_loss, train_acc = train(
-            model, train_loader, optimizer, criterion, class_weights, device
-        )
-        val_loss, val_acc = validate(
-            model, val_loader, criterion, class_weights, device
-        )
+        tr_loss, tr_acc = _epoch(model, train_loader, device, criterion, class_w, train=True, optimizer=optimizer)
+        va_loss, va_acc = _epoch(model, val_loader,   device, criterion, class_w, train=False)
 
-        scheduler.step(val_acc)
+        scheduler.step(va_acc)
+        print(f"Epoch {epoch}/{NUM_EPOCHS}  Train Loss {tr_loss:.4f} Acc {tr_acc:.4f}  "
+              f"Val Loss {va_loss:.4f} Acc {va_acc:.4f}")
 
-        print(
-            f"Epoch {epoch}/{NUM_EPOCHS}  "
-            f"Train Loss: {train_loss:.4f}, Acc: {train_acc:.4f}  "
-            f"Val Loss: {val_loss:.4f}, Acc: {val_acc:.4f}"
-        )
-
-        if val_acc > best_val_acc:
-            best_val_acc = val_acc
+        if va_acc > best_val:
+            best_val = va_acc
             torch.save(model.state_dict(), save_path)
 
-    print(f"🎯 Best Validation Accuracy: {best_val_acc:.4f}")
+    print(f"🎯 Best Validation Accuracy: {best_val:.4f}")
