@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from pneumonia_detection.dataset import get_dataloaders
-from pneumonia_detection.model import PneumoniaCNN
+from pneumonia_detection.CNN.model import PneumoniaCNN
 from pneumonia_detection.config import MODEL_DIR
 
 def evaluate_cnn():
@@ -15,7 +15,7 @@ def evaluate_cnn():
     # Load test set
     _, _, test_loader = get_dataloaders()
 
-    # Load trained model
+    # Load trained model from models/best_cnn_model.pth
     model_path = MODEL_DIR / "best_cnn_model.pth"
     model = PneumoniaCNN().to(device)
     model.load_state_dict(torch.load(model_path, map_location=device))
@@ -35,15 +35,13 @@ def evaluate_cnn():
             all_labels.extend(labels.cpu().numpy().flatten())
             all_preds.extend(preds.cpu().numpy().flatten())
 
-    # Convert to numpy arrays
+    # Convert lists to numpy arrays
     all_labels = np.array(all_labels, dtype=int)
     all_preds = np.array(all_preds, dtype=int)
 
-    # Print classification report
     print("\nClassification Report:")
     print(classification_report(all_labels, all_preds, target_names=["NORMAL", "PNEUMONIA"]))
 
-    # Plot confusion matrix
     cm = confusion_matrix(all_labels, all_preds)
     plt.figure(figsize=(6, 5))
     sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
