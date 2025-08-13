@@ -1,26 +1,23 @@
 import torch
 from torch.utils.data import Dataset, DataLoader
+from torchvision import transforms
 from PIL import Image
 from pneumonia_detection.config import DATA_DIR, IMAGE_SIZE, BATCH_SIZE
-from pneumonia_detection.augmentation.transformations import (
-    train_transform, test_val_transform
-)
 
 class ChestXRayDataset(Dataset):
     def __init__(self, split="train", transform=None):
-        self.split = split
-        split_dir = DATA_DIR / split
+        self.split_dir = DATA_DIR / split
         self.transform = transform
-        self.images, self.labels = [], []
+        self.images = []
+        self.labels = []
 
-        normal_dir = split_dir / "NORMAL"
-        pneu_dir   = split_dir / "PNEUMONIA"
-
-        for p in normal_dir.glob("*.jpeg"):
+        # NORMAL -> 0
+        for p in (self.split_dir / "NORMAL").glob("*.jpeg"):
             self.images.append(p)
             self.labels.append(0)
 
-        for p in pneu_dir.glob("*.jpeg"):
+        # PNEUMONIA -> 1
+        for p in (self.split_dir / "PNEUMONIA").glob("*.jpeg"):
             self.images.append(p)
             self.labels.append(1)
 
@@ -29,17 +26,24 @@ class ChestXRayDataset(Dataset):
 
     def __getitem__(self, idx):
         img_path = self.images[idx]
-        img = Image.open(img_path).convert("RGB")
+        image = Image.open(img_path).convert("RGB")
         if self.transform:
-            img = self.transform(img)
-        # return scalar label; trainer will unsqueeze to (N,1)
+            image = self.transform(image)
+        # scalar label; cnn_trainer will unsqueeze to (N,1)
         label = torch.tensor(self.labels[idx], dtype=torch.float32)
-        return img, label
+        return image, label
 
 def get_dataloaders():
-    train_ds = ChestXRayDataset(split="train", transform=train_transform)
-    val_ds   = ChestXRayDataset(split="val",   transform=test_val_transform)
-    test_ds  = ChestXRayDataset(split="test",  transform=test_val_transform)
+    transform = transforms.Compose([
+        transforms.Grayscale(num_output_channels=1),
+        transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.5], std=[0.5]),
+    ])
+
+    train_ds = ChestXRayDataset("train", transform)
+    val_ds   = ChestXRayDataset("val",   transform)
+    test_ds  = ChestXRayDataset("test",  transform)
 
     train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
     val_loader   = DataLoader(val_ds,   batch_size=BATCH_SIZE, shuffle=False)

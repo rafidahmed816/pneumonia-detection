@@ -11,3 +11,4 @@ torchvision
 pillow
 tqdm
 scikit-learn
+seaborn

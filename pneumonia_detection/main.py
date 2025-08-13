@@ -1,7 +1,7 @@
 import torch
-from pneumonia_detection.dataset import get_dataloaders
+from pneumonia_detection.CNN.cnn_trainer import run_training
 from pneumonia_detection.CNN.model import PneumoniaCNN
-from pneumonia_detection.trainer import run_training
+from pneumonia_detection.dataset import get_dataloaders
 from pneumonia_detection.config import MODEL_DIR
 
 def main():
