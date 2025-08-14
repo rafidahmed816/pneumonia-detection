@@ -1,114 +1,200 @@
-# Pneumonia Detection from Chest X-Rays
+# 🩺 Pneumonia Detection from Chest X-Rays
 
-<a target="_blank" href="https://cookiecutter-data-science.drivendata.org/">
-    <img src="https://img.shields.io/badge/CCDS-Project%20template-328F97?logo=cookiecutter" />
-</a>
+A deep learning project to automatically classify chest X-ray images as **NORMAL** or **PNEUMONIA** using a custom **CNN**.
 
-A deep learning project for detecting pneumonia from chest X-ray images.
+We provide **two training modes**:
 
+1. **CNN without augmentation** – baseline model.
+2. **CNN with augmentation** – uses radiology-friendly image augmentations to improve generalization.
 
-### Installation
+---
 
-1. Clone the repository:
+## 📂 Project Structure
+
+```
+pneumonia-detection/
+│
+├── data/                    # Dataset folder
+│   └── chest_xray/
+│       ├── train/
+│       │   ├── NORMAL/
+│       │   └── PNEUMONIA/
+│       ├── val/
+│       │   ├── NORMAL/
+│       │   └── PNEUMONIA/
+│       └── test/
+│           ├── NORMAL/
+│           └── PNEUMONIA/
+│
+├── models/                  # Saved trained models (.pth)
+│
+├── pneumonia_detection/
+│   ├── dataset.py           # Dataset & dataloaders
+│   ├── transformations.py   # Augmentation & preprocessing
+│   ├── main.py             # Training entrypoint
+│   ├── trainer.py          # Training loop & loss
+│   ├── evaluate.py         # Evaluation script
+│   └── model.py            # CNN architecture
+│
+├── reports/
+│   ├── metrics/            # Saved classification reports
+│   └── figures/            # Confusion matrices
+│
+└── requirements.txt        # Python dependencies
+```
+
+---
+
+## 📦 Installation
+
+1. **Clone the repository**
+
 ```bash
-git clone https://github.com/rafidahmed816/pneumonia-detection.git
+git clone https://github.com/<yourusername>/pneumonia-detection.git
 cd pneumonia-detection
 ```
 
+2. **Create a virtual environment**
 
-2. Create and activate a virtual environment:
-
-For Windows:
 ```bash
 python -m venv venv
+# Windows
 venv\Scripts\activate
+# Mac/Linux
+source venv/bin/activate
+```
 
-3. Install dependencies:
+3. **Install dependencies**
+
 ```bash
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-## for cuda:
-1st uninstall torch:
-pip uninstall torch torchvision torchaudio
+---
 
-then run:
+## 🗂 Dataset Setup
 
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+Download the dataset from [Kaggle Chest X-Ray Images (Pneumonia)](https://www.kaggle.com/paultimothymooney/chest-xray-pneumonia) and place it like this:
 
-
-
-### Dataset Setup
-
-1. Create the following directory structure:
 ```
-data/
-└── chest_xray/
-    ├── train/
-    │   ├── NORMAL/
-    │   └── PNEUMONIA/
-    ├── val/
-    │   ├── NORMAL/
-    │   └── PNEUMONIA/
-    └── test/
-        ├── NORMAL/
-        └── PNEUMONIA/
+data/chest_xray/
+    train/
+        NORMAL/
+        PNEUMONIA/
+    val/
+        NORMAL/
+        PNEUMONIA/
+    test/
+        NORMAL/
+        PNEUMONIA/
 ```
 
-2. Place your chest X-ray images in the respective folders:
-   - NORMAL: Contains normal chest X-ray images
-   - PNEUMONIA: Contains pneumonia chest X-ray images
+---
 
-## Running the Project
+## 🚀 Training
 
-### 1. Dataset Visualization
+We support two training routes:
 
-To visualize the dataset distribution and sample images:
+### 1️⃣ Train **without augmentation** (baseline)
+
 ```bash
-python -m pneumonia_detection.visualize_dataset
+python -m pneumonia_detection.main --mode noaug
 ```
 
-This will generate:
-- Dataset statistics in the console
-- Distribution plots in `reports/figures/dataset_distribution.png`
-- Sample images with details in `reports/figures/sample_images.png`
+This will save:
 
-### 2. Training the Model
+```
+models/best_cnn_model_noaug.pth
+```
 
-To train the pneumonia detection model:
+### 2️⃣ Train **with augmentation** (better generalization)
+
 ```bash
-python -m pneumonia_detection.main
+python -m pneumonia_detection.main --mode aug
 ```
 
-The training process will:
-- trained model on the training set
-- Train for 30 epochs
-- Apply data augmentation (random flips and rotations)
-- Save the best model in `models/best_model.pth`
-- Display training progress with accuracy and loss metrics
+This will save:
 
-## Model Architecture
-
-- trained model
-- Modifications:
-  - Custom classifier layer
-  - Dropout for regularization
-  - Binary classification (Normal vs Pneumonia)
-
-## Project Organization
 ```
-├── LICENSE            <- Open-source license
-├── Makefile           <- Makefile with commands like `make data` or `make train`
-├── README.md          <- The top-level README for developers
-├── data               <- Dataset directory
-├── docs               <- Documentation directory
-├── models             <- Trained and serialized models
-├── notebooks          <- Jupyter notebooks
-├── pneumonia_detection <- Source code directory
-├── references         <- Data dictionaries, manuals, etc.
-├── reports            <- Generated analysis reports and figures
-├── requirements.txt   <- Project dependencies
-└── pyproject.toml     <- Project configuration file
+models/best_cnn_model_aug.pth
 ```
+
+Both modes print training progress with:
+
+```
+Epoch 1/30  Train Loss ...  Val Loss ...  Acc ...
+🎯 Best Validation Accuracy: ...
+```
+
+---
+
+## 📊 Evaluation
+
+You can evaluate either model on the **test set**:
+
+### Evaluate baseline model:
+
+```bash
+python -m pneumonia_detection.evaluate --mode noaug --plot
+```
+
+### Evaluate augmented model:
+
+```bash
+python -m pneumonia_detection.evaluate --mode aug --plot
+```
+
+### Or specify an explicit model file:
+
+```bash
+python -m pneumonia_detection.evaluate --model_path models/best_cnn_model_aug.pth --threshold 0.5 --plot
+```
+
+---
+
+## 📈 Example Results
+
+### Baseline CNN (No Augmentation)
+
+```
+Overall accuracy: 0.81
+Weighted F1: 0.80
+NORMAL    – Precision: 0.97 | Recall: 0.52 | F1: 0.67
+PNEUMONIA – Precision: 0.77 | Recall: 0.99 | F1: 0.87
+```
+
+Confusion matrix shows **high pneumonia recall**, but many NORMAL cases misclassified as PNEUMONIA.
+
+---
+
+### CNN with Augmentation
+
+```
+Overall accuracy: 0.88
+Weighted F1: 0.88
+NORMAL    – Precision: 0.93 | Recall: 0.80 | F1: 0.86
+PNEUMONIA – Precision: 0.85 | Recall: 0.94 | F1: 0.89
+```
+
+Confusion matrix shows **better balance** between NORMAL and PNEUMONIA predictions.
+
+---
+
+## 🧠 Model Architecture
+
+* Convolutional layers with ReLU activation
+* MaxPooling for downsampling
+* Dropout for regularization
+* Fully connected layer for binary classification
+* Sigmoid output for probability of pneumonia
+
+---
+
+## 🛠 Future Improvements
+
+* Add threshold tuning on the validation set for optimal balance
+* Try transfer learning with pretrained models (ResNet, DenseNet)
+* Use Grad-CAM to visualize important lung regions
 
 
