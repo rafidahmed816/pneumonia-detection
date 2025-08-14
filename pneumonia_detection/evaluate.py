@@ -9,6 +9,10 @@ Evaluate trained models on the TEST set:
   • --mode compare -> compares ResNet18 (aug) vs CNN (aug)
 Or pass an explicit --model_path and --backbone {cnn|resnet}.
 
+
+#First evaluate:
+pneumonia_detection/evaluate.py
+
 # CNN no-aug
 python -m pneumonia_detection.evaluate --mode noaug --plot
 
