@@ -42,13 +42,13 @@ def plot_dataset_statistics(stats):
     ax.set_xticklabels(splits)
     ax.legend()
 
-    # Add value labels on bars
+    # Add value labels
     for i, v in enumerate(normal_counts):
         ax.text(i - width / 2, v, str(v), ha="center", va="bottom")
     for i, v in enumerate(pneumonia_counts):
         ax.text(i + width / 2, v, str(v), ha="center", va="bottom")
     plt.tight_layout()
-    plt.show()  # <-- Show directly in notebook
+    plt.show()
 
 
 def show_sample_images():
@@ -70,28 +70,23 @@ def show_sample_images():
             image_paths = list(class_dir.glob("*.jpeg"))[:samples_per_class]
 
             for img_path in image_paths:
-                # Load and resize image
                 img = Image.open(img_path).convert("RGB")
                 img = transforms.Resize((IMAGE_SIZE, IMAGE_SIZE))(img)
 
-                # Get image details
                 original_img = Image.open(img_path)
                 img_details = f"{class_name}\nSize: {original_img.size}\nMode: {original_img.mode}"
 
-                # Display image
                 row_axes[col].imshow(img)
                 row_axes[col].set_title(img_details)
                 row_axes[col].axis("off")
                 col += 1
 
     plt.tight_layout()
-    plt.show()  # <-- Show directly in notebook
+    plt.show()
 
 
 def get_class_distribution(dataset):
-    # Assumes dataset.labels exists
     from collections import Counter
-
     counts = Counter(dataset.labels)
     return dict(counts)
 
@@ -110,10 +105,6 @@ def plot_class_distribution(class_counts, class_names=None):
 
 
 def show_samples_from_dataset(dataset, class_names=None, samples_per_class=3):
-    import matplotlib.pyplot as plt
-    from PIL import Image
-    import numpy as np
-
     if class_names is None:
         class_names = ["Normal", "Pneumonia"]
     fig, axes = plt.subplots(1, len(class_names) * samples_per_class, figsize=(15, 5))
@@ -132,3 +123,9 @@ def show_samples_from_dataset(dataset, class_names=None, samples_per_class=3):
     plt.suptitle("Sample Images from Training Set", fontsize=14)
     plt.tight_layout()
     plt.show()
+
+
+if __name__ == "__main__":
+    stats = count_images()
+    plot_dataset_statistics(stats)
+    show_sample_images()
