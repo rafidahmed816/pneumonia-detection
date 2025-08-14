@@ -1,5 +1,5 @@
 """
-🩺 Pneumonia Detection — Evaluation & Comparison
+🩺 Pneumonia Detection — Evaluation & Comparison (with MCC)
 
 Evaluate trained CNNs on the TEST set:
   • --mode noaug  -> models/best_cnn_model_noaug.pth
@@ -27,6 +27,8 @@ from sklearn.metrics import (
     confusion_matrix,
     accuracy_score,
     f1_score,
+    matthews_corrcoef,   # <-- MCC
+    balanced_accuracy_score,
 )
 import matplotlib.pyplot as plt
 
@@ -37,15 +39,29 @@ try:
 except Exception:
     _HAS_SNS = False
 
-from pneumonia_detection.CNN.model import PneumoniaCNN
+# ---- Model import (support either layout) ----
+try:
+    from pneumonia_detection.CNN.model import PneumoniaCNN   # if you keep a CNN/ package
+except Exception:
+    from pneumonia_detection.model import PneumoniaCNN        # fallback to flat layout
+
 from pneumonia_detection.config import MODEL_DIR
-# We always evaluate with the "no-aug" eval loader for fair comparison
-from pneumonia_detection.dataset import get_dataloaders_cnn_no_aug
+# Always evaluate with the no-augmentation test loader for fairness
+try:
+    from pneumonia_detection.dataset import get_dataloaders_cnn_no_aug
+except Exception:
+    # fallback if you kept a single get_dataloaders()
+    from pneumonia_detection.dataset import get_dataloaders as get_dataloaders_cnn_no_aug
 
 
 # ---------------------- helpers ---------------------- #
 def _load_test_loader():
-    _, _, test_loader = get_dataloaders_cnn_no_aug()
+    """Use deterministic, no-augmentation transforms for evaluation."""
+    try:
+        _, _, test_loader = get_dataloaders_cnn_no_aug()
+    except TypeError:
+        # if fallback get_dataloaders() signature
+        _, _, test_loader = get_dataloaders_cnn_no_aug()
     return test_loader
 
 
@@ -69,9 +85,9 @@ def _evaluate_one(model_path: Path, threshold: float, device: torch.device,
     with torch.no_grad():
         for images, labels in test_loader:
             images = images.to(device)
-            # labels may come as shape [N] or [N,1] depending on dataset impl → flatten safely
+            # labels may be [N] or [N,1]; flatten safely
             labels = labels.to(device).float().view(-1)
-            outputs = model(images)                      # sigmoid probs, shape [N,1]
+            outputs = model(images)                            # sigmoid probs, [N,1]
             probs = outputs.squeeze(1).detach().cpu().numpy()  # [N]
             all_probs.extend(probs)
             all_labels.extend(labels.detach().cpu().numpy())
@@ -79,24 +95,30 @@ def _evaluate_one(model_path: Path, threshold: float, device: torch.device,
     y_true = np.asarray(all_labels, dtype=int)
     y_pred = (np.asarray(all_probs) >= threshold).astype(int)
 
-    acc = accuracy_score(y_true, y_pred)
-    f1w = f1_score(y_true, y_pred, average="weighted")
-    report_txt = classification_report(y_true, y_pred,
-                                       target_names=["NORMAL", "PNEUMONIA"])
+    # Metrics
+    acc     = accuracy_score(y_true, y_pred)
+    f1w     = f1_score(y_true, y_pred, average="weighted")
+    mcc     = matthews_corrcoef(y_true, y_pred)               # <-- MCC
+    bacc    = balanced_accuracy_score(y_true, y_pred)         # (optional, handy on imbalance)
+    report_txt  = classification_report(y_true, y_pred,
+                                        target_names=["NORMAL", "PNEUMONIA"])
     report_dict = classification_report(y_true, y_pred,
                                         target_names=["NORMAL", "PNEUMONIA"],
                                         output_dict=True)
     cm = confusion_matrix(y_true, y_pred)
 
+    # Print
     print(f"\n=== {title} ===")
     print(f"Model: {model_path}")
     print(f"Threshold: {threshold}")
     print("\nClassification Report:")
     print(report_txt)
-    print(f"Overall accuracy: {acc:.4f} | Weighted F1: {f1w:.4f}")
+    print(f"Overall accuracy: {acc:.4f} | Weighted F1: {f1w:.4f} | "
+          f"MCC: {mcc:.4f} | Balanced Acc: {bacc:.4f}")
     print("Confusion Matrix [rows=True labels, cols=Pred]:")
     print(cm)
 
+    # Plot
     if plot_cm and _HAS_SNS:
         plt.figure(figsize=(6, 5))
         sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
@@ -116,6 +138,8 @@ def _evaluate_one(model_path: Path, threshold: float, device: torch.device,
         "threshold": threshold,
         "accuracy": acc,
         "f1_weighted": f1w,
+        "mcc": mcc,
+        "balanced_accuracy": bacc,
         "report": report_dict,
         "cm": cm,
     }
@@ -130,7 +154,6 @@ def _resolve_model_path(mode: str | None, model_path_cli: str | None) -> Tuple[P
         p = Path(model_path_cli)
         if not p.exists():
             raise FileNotFoundError(f"Model file not found: {p}")
-        # Explicit path → evaluate only that one
         return p, None
 
     if mode == "noaug":
@@ -144,17 +167,18 @@ def _resolve_model_path(mode: str | None, model_path_cli: str | None) -> Tuple[P
 def _print_comparison(a: Dict[str, Any], b: Dict[str, Any]) -> None:
     """Pretty scoreboard of the two runs."""
     print("\n================ Comparison (Test) ================")
-    print(f"{'Model':<18} {'Accuracy':>10} {'F1 (weighted)':>15} "
-          f"{'NORMAL R':>10} {'PNEUMONIA R':>13}")
-    print("-" * 66)
+    print(f"{'Model':<18} {'Acc':>7} {'F1w':>8} {'MCC':>8} {'BalAcc':>8} "
+          f"{'NORMAL R':>10} {'PNEUM R':>10}")
+    print("-" * 80)
 
     for m in (a, b):
         rep = m["report"]
         normal_recall = rep["NORMAL"]["recall"]
         pneumonia_recall = rep["PNEUMONIA"]["recall"]
-        print(f"{m['title']:<18} {m['accuracy']:>10.4f} {m['f1_weighted']:>15.4f} "
-              f"{normal_recall:>10.2f} {pneumonia_recall:>13.2f}")
-    print("=" * 66 + "\n")
+        print(f"{m['title']:<18} {m['accuracy']:>7.4f} {m['f1_weighted']:>8.4f} "
+              f"{m['mcc']:>8.4f} {m['balanced_accuracy']:>8.4f} "
+              f"{normal_recall:>10.2f} {pneumonia_recall:>10.2f}")
+    print("=" * 80 + "\n")
 
 
 # ---------------------- CLI ---------------------- #

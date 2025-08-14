@@ -21,7 +21,7 @@ def build_train_augment_transform():
         transforms.RandomAffine(
             degrees=5,              # tiny rotations
             translate=(0.04, 0.04), # <= 4% shifts
-            scale=(0.98, 1.02),     # light zoom
+            scale=(0.99, 1.01),     # light zoom
             shear=(-2, 2),
         ),
         transforms.RandomHorizontalFlip(p=0.5),
