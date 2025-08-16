@@ -30,7 +30,7 @@ def build_train_augment_transform():
         transforms.RandomAdjustSharpness(1.2, p=0.25),
         transforms.RandomAutocontrast(p=0.25),
         transforms.RandomEqualize(p=0.15),
-        transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 1.0)),
+        transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 1.0)),#add some noise
 
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.5], std=[0.5]),
