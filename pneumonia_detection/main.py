@@ -28,6 +28,7 @@ def train_cnn_with_aug(save_path="models/best_cnn_model_aug.pth", use_weighted_s
     run_training(model, train_loader, val_loader, device, save_path=save_path)
     print(f"Done. Saved: {save_path}")
 
+#resnet
 def train_resnet_aug(save_path = "models/best_resnet18_aug.pth"):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device} | Mode: ResNet18 with augmentation")
