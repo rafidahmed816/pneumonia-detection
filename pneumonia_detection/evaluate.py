@@ -70,7 +70,7 @@ try:
 except Exception:
     from pneumonia_detection.model import PneumoniaCNN  # Fallback to flat layout
 
-# ResNet wrapper (you created in pneumonia_detection/resnet.py)
+# ResNet wrapper (created in pneumonia_detection/resnet.py)
 try:
     from pneumonia_detection.resnet.resnet import ResNet18Binary  # ResNet model
 

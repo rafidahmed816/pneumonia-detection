@@ -1,6 +1,5 @@
 from torchvision import transforms
 from pneumonia_detection.config import IMAGE_SIZE
-from torchvision import transforms
 
 
 # preprocessing for val/test (no-aug)
@@ -36,10 +35,6 @@ def build_train_augment_transform():
             transforms.Normalize(mean=[0.5], std=[0.5]),
         ]
     )
-
-
-# Modify existing function to handle RGB inputs for ResNet
-from torchvision import transforms
 
 
 def build_resnet_transform():
