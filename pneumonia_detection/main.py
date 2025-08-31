@@ -12,6 +12,10 @@ from pneumonia_detection.dataset import (
     get_dataloaders_resnet_aug,
     get_dataloaders_densenet_aug,
 )
+from pneumonia_detection.supcon.model import PneumoniaSupConModel
+from pneumonia_detection.supcon.trainer import run_supcon_training
+
+""" CNN Training without Augmentation """
 
 
 def train_cnn_no_aug(save_path="models/best_cnn_model_noaug.pth"):
@@ -22,6 +26,9 @@ def train_cnn_no_aug(save_path="models/best_cnn_model_noaug.pth"):
     model = PneumoniaCNN().to(device)
     run_training(model, train_loader, val_loader, device, save_path=save_path)
     print(f"Done. Saved: {save_path}")
+
+
+""" CNN Training with Augmentation """
 
 
 def train_cnn_with_aug(
@@ -38,6 +45,9 @@ def train_cnn_with_aug(
     print(f"Done. Saved: {save_path}")
 
 
+""" ResNet Training with Augmentation """
+
+
 def train_resnet_with_aug(
     save_path="models/best_resnet_model_aug.pth", use_weighted_sampler=True
 ):
@@ -49,6 +59,9 @@ def train_resnet_with_aug(
     model = ResNet18Binary(pretrained=False).to(device)
     run_training(model, train_loader, val_loader, device, save_path=save_path)
     print(f"Done. Saved: {save_path}")
+
+
+""" DenseNet Training with Augmentation """
 
 
 def train_densenet_with_aug(
@@ -66,11 +79,35 @@ def train_densenet_with_aug(
     print(f"Done. Saved: {save_path}")
 
 
+""" SupCon Training with Augmentation """
+
+
+def train_supcon_with_aug(
+    save_path="models/best_supcon_model_aug.pth", use_weighted_sampler=True
+):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device} | Mode: SupCon with augmentation")
+
+    train_loader, val_loader, _ = get_dataloaders_resnet_aug(
+        use_weighted_sampler=use_weighted_sampler
+    )
+
+    # Create SupCon model with improved parameters
+    model = PneumoniaSupConModel(backbone="resnet18", feat_dim=256, num_classes=1)
+
+    # Train with SupCon trainer
+    trainer = run_supcon_training(
+        model, train_loader, val_loader, device, save_path=save_path
+    )
+    print(f"Done. Saved: {save_path}")
+    return trainer
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--mode",
-        choices=["noaug", "aug", "resnet_aug", "densenet_aug"],
+        choices=["noaug", "aug", "resnet_aug", "densenet_aug", "supcon_aug"],
         default="noaug",
     )
     args = parser.parse_args()
@@ -80,9 +117,11 @@ def main():
     elif args.mode == "noaug":
         train_cnn_no_aug()
     elif args.mode == "resnet_aug":
-        train_resnet_with_aug()  # Train ResNet with augmentation
+        train_resnet_with_aug()
     elif args.mode == "densenet_aug":
         train_densenet_with_aug()
+    elif args.mode == "supcon_aug":
+        train_supcon_with_aug()
 
 
 if __name__ == "__main__":

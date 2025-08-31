@@ -7,6 +7,8 @@ Evaluate trained models on the TEST set:
   • --mode both    -> compares CNN noaug vs CNN aug
   • --mode resnet  -> models/best_resnet18_aug.pth      (ResNet18, RGB/ImageNet)
   • --mode compare -> compares ResNet18 (aug) vs CNN (aug)
+  • --mode supcon  -> models/best_supcon_model_aug.pth   (SupCon, RGB/ImageNet)
+  • --mode compare -> compares all models (CNN, ResNet, DenseNet, SupCon)
 Or pass an explicit --model_path and --backbone {cnn|resnet}.
 
 
@@ -54,6 +56,7 @@ from sklearn.metrics import (
     matthews_corrcoef,
     balanced_accuracy_score,
 )
+from pneumonia_detection.config import MODEL_DIR
 
 # Optional plotting
 try:
@@ -68,7 +71,9 @@ except Exception:
 try:
     from pneumonia_detection.CNN.model import PneumoniaCNN  # CNN model
 except Exception:
-    from pneumonia_detection.model import PneumoniaCNN  # Fallback to flat layout
+    from pneumonia_detection.modeling.model import (
+        PneumoniaCNN,
+    )  # Fallback to flat layout
 
 # ResNet wrapper (created in pneumonia_detection/resnet.py)
 try:
@@ -90,7 +95,6 @@ except Exception:
     DenseNet121Binary = None
     _HAS_DENSENET = False
 
-from pneumonia_detection.config import MODEL_DIR
 
 # ---------------------- Loader imports ---------------------- #
 # ResNet eval loader (RGB/ImageNet pipeline)
@@ -123,12 +127,21 @@ try:
 except Exception:
     _HAS_CNN_EVAL = False
 
+# SupCon wrapper
+try:
+    from pneumonia_detection.supcon.model import PneumoniaSupConModel
+
+    _HAS_SUPCON = True
+except Exception:
+    PneumoniaSupConModel = None
+    _HAS_SUPCON = False
+
 
 @dataclass
 class EvalPlan:
     title: str
     model_path: Path
-    backbone: str  # "cnn", "resnet", or "densenet"
+    backbone: str  # "cnn", "resnet", or "densenet" or "supcon"
     threshold: float
 
 
@@ -139,6 +152,7 @@ def _load_test_loader(backbone: str):
       - cnn     -> grayscale eval transforms
       - resnet  -> RGB ImageNet eval transforms
       - densenet -> RGB ImageNet eval transforms
+      - supcon  -> RGB ImageNet eval transforms (same as ResNet)
     """
     if backbone == "resnet":
         if not _HAS_RESNET_EVAL:
@@ -161,6 +175,18 @@ def _load_test_loader(backbone: str):
             _, _, test_loader = _densenet_eval_loaders()
         except TypeError:
             _, _, test_loader = _densenet_eval_loaders()
+        return test_loader
+    elif backbone == "supcon":
+        # SupCon uses the same data format as ResNet (RGB/ImageNet)
+        if not _HAS_RESNET_EVAL:
+            print(
+                "[WARN] ResNet eval loader not found for SupCon. Falling back to DenseNet eval loader."
+            )
+            return _load_test_loader("densenet")
+        try:
+            _, _, test_loader = _resnet_eval_loaders()
+        except TypeError:
+            _, _, test_loader = _resnet_eval_loaders()
         return test_loader
     else:
         if not _HAS_CNN_EVAL:
@@ -191,6 +217,14 @@ def _load_model(
         model = DenseNet121Binary(pretrained=False).to(
             device
         )  # Use pretrained flag based on your need
+    elif backbone == "supcon":
+        if not _HAS_SUPCON or PneumoniaSupConModel is None:
+            raise RuntimeError(
+                "PneumoniaSupConModel not available. Did you create pneumonia_detection/supcon/model.py?"
+            )
+        model = PneumoniaSupConModel(
+            backbone="resnet18", feat_dim=256, num_classes=1
+        ).to(device)
     else:
         model = PneumoniaCNN().to(device)
 
@@ -216,8 +250,14 @@ def _evaluate_one(
             labels = (
                 labels.to(device).float().view(-1)
             )  # [N] regardless of [N] or [N,1]
-            outputs = model(images)  # sigmoid probs, [N,1]
-            probs = outputs.squeeze(1).detach().cpu().numpy()  # [N]
+            if plan.backbone == "supcon":
+                logits = model.classify(images)  # Get raw logits
+                probs = (
+                    torch.sigmoid(logits).squeeze(1).detach().cpu().numpy()
+                )  # Apply sigmoid
+            else:
+                outputs = model(images)
+                probs = outputs.squeeze(1).detach().cpu().numpy()
             all_probs.extend(probs)
             all_labels.extend(labels.detach().cpu().numpy())
 
@@ -347,6 +387,15 @@ def _plans_from_mode(mode: str, threshold: float) -> List[EvalPlan]:
                 threshold,
             )
         )
+    elif mode == "supcon":
+        plans.append(
+            EvalPlan(
+                "SupCon (with aug)",
+                MODEL_DIR / "best_supcon_model_aug.pth",
+                "supcon",
+                threshold,
+            )
+        )
     elif mode == "compare":
         # Compare ResNet (aug) vs CNN (aug) vs DenseNet (aug)
         plans.append(
@@ -370,6 +419,14 @@ def _plans_from_mode(mode: str, threshold: float) -> List[EvalPlan]:
                 threshold,
             )
         )
+        plans.append(
+            EvalPlan(
+                "SupCon (with aug)",
+                MODEL_DIR / "best_supcon_model_aug.pth",
+                "supcon",
+                threshold,
+            )
+        )
     else:
         raise ValueError(f"Unknown mode: {mode}")
     return plans
@@ -380,7 +437,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "--mode",
-        choices=["aug", "resnet", "compare", "densenet", "densenet_aug"],
+        choices=["aug", "resnet", "compare", "densenet", "supcon"],
         default="both",
         help="Which trained model(s) to evaluate.",
     )
@@ -391,7 +448,7 @@ def main():
     )
     ap.add_argument(
         "--backbone",
-        choices=["cnn", "resnet", "densenet"],
+        choices=["cnn", "resnet", "densenet", "supcon"],
         default="cnn",
         help="Backbone to use with --model_path (selects proper test transforms).",
     )
