@@ -150,3 +150,13 @@ def get_dataloaders_densenet_aug(use_weighted_sampler: bool = True):
     test_loader = DataLoader(test_ds, batch_size=BATCH_SIZE)
     return train_loader, val_loader, test_loader
 
+
+class PneumoniaDataset(ChestXRayDataset):
+    """
+    A wrapper for ChestXRayDataset that provides the samples and labels
+    in a way that is compatible with the SupCon trainer.
+    """
+
+    @property
+    def samples(self):
+        return list(zip(self.images, self.labels))

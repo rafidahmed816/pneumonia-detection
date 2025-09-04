@@ -11,9 +11,10 @@ from pneumonia_detection.dataset import (
     get_dataloaders_cnn_aug,
     get_dataloaders_resnet_aug,
     get_dataloaders_densenet_aug,
+    PneumoniaDataset,
 )
-from pneumonia_detection.supcon.model import PneumoniaSupConModel
-from pneumonia_detection.supcon.trainer import run_supcon_training
+from pneumonia_detection.supcon.model import SupConModel
+from pneumonia_detection.supcon.trainer import CrossValidationSupConTrainer
 
 """ CNN Training without Augmentation """
 
@@ -83,23 +84,36 @@ def train_densenet_with_aug(
 
 
 def train_supcon_with_aug(
-    save_path="models/best_supcon_model_aug.pth", use_weighted_sampler=True
+    save_path="models/best_supcon_model_cv.pth", use_weighted_sampler=True
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device} | Mode: SupCon with augmentation")
+    print(f"Using device: {device} | Mode: SupCon with Cross-Validation")
 
-    train_loader, val_loader, _ = get_dataloaders_resnet_aug(
-        use_weighted_sampler=use_weighted_sampler
+    # Create the full dataset (not data loaders)
+    full_dataset = PneumoniaDataset(split="train", transform=None)
+
+    # Create trainer with improved hyperparameters
+    trainer = CrossValidationSupConTrainer(
+        device=device,
+        learning_rate=0.0005,  # Lower learning rate for stability
+        temperature=0.05,  # Lower temperature for harder negatives
+        epochs_stage1=40,  # More epochs for contrastive learning
+        epochs_stage2=30,  # More epochs for fine-tuning
+        save_path=save_path,
+        patience=10,  # More patience
+        k_folds=5,
+        backbone="resnet18",
+        feat_dim=256,  # Larger feature dimension
+        min_improvement=0.001,
     )
 
-    # Create SupCon model with improved parameters
-    model = PneumoniaSupConModel(backbone="resnet18", feat_dim=256, num_classes=1)
-
-    # Train with SupCon trainer
-    trainer = run_supcon_training(
-        model, train_loader, val_loader, device, save_path=save_path
+    # Use cross-validation training
+    model, avg_metrics = trainer.cross_validate_training(full_dataset)
+    print(f"Cross-validation completed. Best model saved: {save_path}")
+    print(
+        f"Average accuracy: {avg_metrics['avg_accuracy']:.4f} ± {avg_metrics['std_accuracy']:.4f}"
     )
-    print(f"Done. Saved: {save_path}")
+
     return trainer
 
 

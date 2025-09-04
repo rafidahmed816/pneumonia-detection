@@ -1,91 +1,72 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.metrics import (
+    classification_report,
+    accuracy_score,
+    f1_score,
+    matthews_corrcoef,
+)
+from sklearn.model_selection import StratifiedKFold
 import pandas as pd
 import json
 from pathlib import Path
 from datetime import datetime
 import os
 from torchvision import transforms
+from typing import List, Dict, Any, Tuple
+import time
 
-from pneumonia_detection.supcon.model import PneumoniaSupConModel, SupConLoss
+from pneumonia_detection.supcon.model import SupConModel, SupConLoss
 from pneumonia_detection.config import MODEL_DIR
 
 
-class SupConTrainer:
+class CrossValidationSupConTrainer:
     def __init__(
         self,
-        model,
         device,
         learning_rate=0.001,
-        temperature=0.1,  # Increased temperature for better gradients
-        epochs_stage1=100,
-        epochs_stage2=50,
-        save_path="models/best_supcon_model_aug.pth",
-        patience=15,  # Early stopping patience
+        temperature=0.05,  # Lower temperature for harder negatives
+        epochs_stage1=30,  # Reduced epochs
+        epochs_stage2=20,  # Reduced epochs
+        save_path="models/best_supcon_model_cv.pth",
+        patience=8,  # Reduced patience
+        k_folds=5,
+        backbone="resnet18",
+        feat_dim=128,  # Reduced feature dimension
+        min_improvement=0.001,  # Minimum improvement for early stopping
     ):
-        self.model = model.to(device)
         self.device = device
         self.temperature = temperature
         self.epochs_stage1 = epochs_stage1
         self.epochs_stage2 = epochs_stage2
         self.save_path = save_path
         self.patience = patience
+        self.k_folds = k_folds
+        self.backbone = backbone
+        self.feat_dim = feat_dim
+        self.learning_rate = learning_rate
+        self.min_improvement = min_improvement
 
-        # Loss functions with class weighting for imbalanced data
-        pos_weight = torch.tensor([3.0]).to(device)  # Pneumonia is less frequent
-        self.contrastive_loss = SupConLoss(temperature=temperature)
-        self.classification_loss = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-
-        # Optimizers with better learning rates
-        self.optimizer_stage1 = optim.AdamW(
-            self.model.parameters(), lr=learning_rate, weight_decay=1e-4
-        )
-        self.optimizer_stage2 = optim.AdamW(
-            self.model.parameters(), lr=learning_rate * 0.5, weight_decay=1e-4
-        )
-
-        # Schedulers
-        self.scheduler_stage1 = optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer_stage1, mode="min", factor=0.5, patience=8
-        )
-        self.scheduler_stage2 = optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer_stage2, mode="min", factor=0.5, patience=5
-        )
-
-        # Training history
-        self.history = {
-            "stage1_contrastive_loss": [],
-            "stage1_val_loss": [],
-            "stage2_classification_loss": [],
-            "stage2_val_loss": [],
-            "stage2_val_accuracy": [],
-            "stage2_val_f1": [],
+        # Training history for cross-validation
+        self.cv_history = {
+            "fold_results": [],
+            "avg_metrics": {},
         }
 
-        self.best_val_loss = float("inf")
-        self.best_val_acc = 0.0
-        self.early_stop_counter = 0
-
-        # Setup stronger augmentations for contrastive learning
+        # Stronger augmentation for contrastive learning
         self.strong_aug = transforms.Compose(
             [
                 transforms.ToPILImage(),
                 transforms.RandomAffine(
-                    degrees=20, translate=(0.15, 0.15), scale=(0.85, 1.15)
+                    degrees=15, translate=(0.1, 0.1), scale=(0.9, 1.1)
                 ),
                 transforms.RandomHorizontalFlip(p=0.5),
-                transforms.ColorJitter(
-                    brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1
-                ),
-                transforms.RandomAdjustSharpness(2.0, p=0.5),
-                transforms.GaussianBlur(kernel_size=5, sigma=(0.1, 3.0)),
-                transforms.RandomGrayscale(p=0.2),
+                transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.2),
+                transforms.RandomAdjustSharpness(1.5, p=0.3),
                 transforms.ToTensor(),
                 transforms.Normalize(
                     mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
@@ -94,21 +75,20 @@ class SupConTrainer:
         )
 
     def _create_augmented_views(self, images):
-        """Create two different augmented views of the same batch"""
+        """Create two augmented views efficiently"""
         batch_size = images.size(0)
         view1_list = []
         view2_list = []
 
         for i in range(batch_size):
             img = images[i]
-            # Convert back to PIL-friendly format
+            # Convert to numpy for augmentation
             img_np = img.cpu().permute(1, 2, 0).numpy()
             img_np = img_np * np.array([0.229, 0.224, 0.225]) + np.array(
                 [0.485, 0.456, 0.406]
             )
             img_np = np.clip(img_np * 255, 0, 255).astype(np.uint8)
 
-            # Create two different augmented views
             view1 = self.strong_aug(img_np).to(self.device)
             view2 = self.strong_aug(img_np).to(self.device)
 
@@ -117,168 +97,141 @@ class SupConTrainer:
 
         return torch.stack(view1_list), torch.stack(view2_list)
 
-    def train_stage1_contrastive(self, train_loader, val_loader):
-        """Stage 1: Train with contrastive loss only"""
-        print("=== Stage 1: Contrastive Learning ===")
+    def _train_single_fold(self, train_loader, val_loader, fold_idx):
+        """Train a single fold with improved strategy"""
+        print(f"\n=== Fold {fold_idx + 1}/{self.k_folds} ===")
 
+        # Create model for this fold
+        model = SupConModel(
+            backbone=self.backbone,
+            feat_dim=self.feat_dim,
+            num_classes=1,
+            dropout_rate=0.2,
+        ).to(self.device)
+
+        # Loss functions
+        contrastive_loss = SupConLoss(temperature=self.temperature)
+        pos_weight = torch.tensor([2.0]).to(self.device)  # Reduced class weight
+        classification_loss = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+
+        # Single optimizer for both stages with cosine annealing
+        optimizer = optim.AdamW(
+            model.parameters(),
+            lr=self.learning_rate,
+            weight_decay=1e-4,
+            betas=(0.9, 0.999),
+        )
+
+        # Cosine annealing scheduler
+        total_epochs = self.epochs_stage1 + self.epochs_stage2
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=total_epochs, eta_min=self.learning_rate * 0.01
+        )
+
+        best_val_loss = float("inf")
+        patience_counter = 0
+        fold_history = {
+            "stage1_losses": [],
+            "stage2_losses": [],
+            "val_losses": [],
+            "val_accuracies": [],
+        }
+
+        # Stage 1: Contrastive Learning (shorter)
+        print(f"Stage 1: Contrastive Learning ({self.epochs_stage1} epochs)")
         for epoch in range(self.epochs_stage1):
-            self.model.train()
+            model.train()
             total_loss = 0.0
 
             for batch_idx, (images, labels) in enumerate(train_loader):
                 images = images.to(self.device)
                 labels = labels.to(self.device).long()
 
-                # Create two different augmented views for better contrastive learning
-                view1_batch, view2_batch = self._create_augmented_views(images)
+                # Create augmented views
+                view1, view2 = self._create_augmented_views(images)
 
-                # Get contrastive features for both views
-                features1 = self.model(view1_batch, mode="contrastive")
-                features2 = self.model(view2_batch, mode="contrastive")
-
-                # Stack features: [bsz, 2, feat_dim]
+                # Get features
+                features1 = model(view1, mode="contrastive")
+                features2 = model(view2, mode="contrastive")
                 features = torch.stack([features1, features2], dim=1)
 
-                # Compute contrastive loss
-                loss = self.contrastive_loss(features, labels)
+                # Contrastive loss
+                loss = contrastive_loss(features, labels)
 
-                self.optimizer_stage1.zero_grad()
+                optimizer.zero_grad()
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-                self.optimizer_stage1.step()
+                torch.nn.utils.clip_grad_norm_(
+                    model.parameters(), max_norm=0.5
+                )  # Reduced clipping
+                optimizer.step()
+                scheduler.step()
 
                 total_loss += loss.item()
 
-                if batch_idx % 20 == 0:
-                    print(
-                        f"Stage 1 Epoch {epoch+1}/{self.epochs_stage1}, "
-                        f"Batch {batch_idx}/{len(train_loader)}, "
-                        f"Loss: {loss.item():.6f}"
-                    )
+            avg_loss = total_loss / len(train_loader)
+            fold_history["stage1_losses"].append(avg_loss)
 
-            avg_train_loss = total_loss / len(train_loader)
-            val_loss = self._validate_stage1(val_loader)
+            if epoch % 5 == 0:
+                print(f"  Epoch {epoch+1}/{self.epochs_stage1}: Loss = {avg_loss:.4f}")
 
-            self.history["stage1_contrastive_loss"].append(avg_train_loss)
-            self.history["stage1_val_loss"].append(val_loss)
-
-            self.scheduler_stage1.step(val_loss)
-
-            print(
-                f"Stage 1 Epoch {epoch+1}/{self.epochs_stage1}: "
-                f"Train Loss: {avg_train_loss:.6f}, Val Loss: {val_loss:.6f}"
-            )
-
-            # Early stopping for stage 1
-            if val_loss < self.best_val_loss:
-                self.best_val_loss = val_loss
-                self.early_stop_counter = 0
-            else:
-                self.early_stop_counter += 1
-
-            if self.early_stop_counter >= self.patience:
-                print(f"Early stopping triggered at epoch {epoch+1}")
-                break
-
-        print("Stage 1 completed successfully!")
-
-    def _validate_stage1(self, val_loader):
-        """Validation for stage 1 (contrastive learning)"""
-        self.model.eval()
-        total_loss = 0.0
-
-        with torch.no_grad():
-            for images, labels in val_loader:
-                images = images.to(self.device)
-                labels = labels.to(self.device).long()
-
-                # Create augmented views for validation too
-                view1_batch, view2_batch = self._create_augmented_views(images)
-
-                features1 = self.model(view1_batch, mode="contrastive")
-                features2 = self.model(view2_batch, mode="contrastive")
-                features = torch.stack([features1, features2], dim=1)
-
-                loss = self.contrastive_loss(features, labels)
-                total_loss += loss.item()
-
-        return total_loss / len(val_loader)
-
-    def train_stage2_classification(self, train_loader, val_loader):
-        """Stage 2: Fine-tune with classification loss"""
-        print("\n=== Stage 2: Classification Fine-tuning ===")
-
-        # Reset early stopping for stage 2
-        self.best_val_acc = 0.0
-        self.early_stop_counter = 0
-
+        # Stage 2: Classification (shorter)
+        print(f"Stage 2: Classification ({self.epochs_stage2} epochs)")
         for epoch in range(self.epochs_stage2):
-            self.model.train()
+            model.train()
             total_loss = 0.0
 
-            for batch_idx, (images, labels) in enumerate(train_loader):
+            for images, labels in train_loader:
                 images = images.to(self.device)
                 labels = labels.to(self.device).float().view(-1, 1)
 
-                # Get classification predictions (logits, not sigmoid)
-                logits = self.model.classify(images)  # Use direct classify method
+                logits = model.classify(images)
+                loss = classification_loss(logits, labels)
 
-                # Compute classification loss (BCEWithLogitsLoss handles sigmoid internally)
-                loss = self.classification_loss(logits, labels)
-
-                self.optimizer_stage2.zero_grad()
+                optimizer.zero_grad()
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-                self.optimizer_stage2.step()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.5)
+                optimizer.step()
+                scheduler.step()
 
                 total_loss += loss.item()
 
-                if batch_idx % 20 == 0:
-                    print(
-                        f"Stage 2 Epoch {epoch+1}/{self.epochs_stage2}, "
-                        f"Batch {batch_idx}/{len(train_loader)}, "
-                        f"Loss: {loss.item():.6f}"
-                    )
+            avg_loss = total_loss / len(train_loader)
+            fold_history["stage2_losses"].append(avg_loss)
 
-            avg_train_loss = total_loss / len(train_loader)
-            val_metrics = self._validate_stage2(val_loader)
+            # Validation
+            val_metrics = self._validate_fold(model, val_loader, classification_loss)
+            fold_history["val_losses"].append(val_metrics["loss"])
+            fold_history["val_accuracies"].append(val_metrics["accuracy"])
 
-            self.history["stage2_classification_loss"].append(avg_train_loss)
-            self.history["stage2_val_loss"].append(val_metrics["loss"])
-            self.history["stage2_val_accuracy"].append(val_metrics["accuracy"])
-            self.history["stage2_val_f1"].append(val_metrics["f1"])
-
-            self.scheduler_stage2.step(val_metrics["loss"])
-
-            # Save best model based on validation accuracy (better metric for medical data)
-            if val_metrics["accuracy"] > self.best_val_acc:
-                self.best_val_acc = val_metrics["accuracy"]
-                self.early_stop_counter = 0
-                torch.save(self.model.state_dict(), self.save_path)
-                print(
-                    f"*** New best model saved with val_acc: {val_metrics['accuracy']:.6f} ***"
-                )
+            # Early stopping based on validation loss
+            if val_metrics["loss"] < best_val_loss - self.min_improvement:
+                best_val_loss = val_metrics["loss"]
+                patience_counter = 0
+                # Save best model for this fold
+                best_state = model.state_dict().copy()
             else:
-                self.early_stop_counter += 1
+                patience_counter += 1
 
-            print(
-                f"Stage 2 Epoch {epoch+1}/{self.epochs_stage2}: "
-                f"Train Loss: {avg_train_loss:.6f}, "
-                f'Val Loss: {val_metrics["loss"]:.6f}, '
-                f'Val Acc: {val_metrics["accuracy"]:.4f}, '
-                f'Val F1: {val_metrics["f1"]:.4f}'
-            )
+            if epoch % 5 == 0:
+                print(
+                    f"  Epoch {epoch+1}/{self.epochs_stage2}: "
+                    f"Loss = {avg_loss:.4f}, Val Acc = {val_metrics['accuracy']:.4f}"
+                )
 
             # Early stopping
-            if self.early_stop_counter >= self.patience:
-                print(f"Early stopping triggered at epoch {epoch+1}")
+            if patience_counter >= self.patience:
+                print(f"  Early stopping at epoch {epoch+1}")
                 break
 
-        print("Stage 2 completed successfully!")
+        # Load best state for final evaluation
+        model.load_state_dict(best_state)
+        final_metrics = self._validate_fold(model, val_loader, classification_loss)
 
-    def _validate_stage2(self, val_loader):
-        """Validation for stage 2 (classification)"""
-        self.model.eval()
+        return model, final_metrics, fold_history
+
+    def _validate_fold(self, model, val_loader, classification_loss):
+        """Validate model on validation set"""
+        model.eval()
         total_loss = 0.0
         all_predictions = []
         all_labels = []
@@ -288,197 +241,442 @@ class SupConTrainer:
                 images = images.to(self.device)
                 labels = labels.to(self.device).float().view(-1, 1)
 
-                # Get logits (not sigmoid predictions)
-                logits = self.model.classify(images)
-                loss = self.classification_loss(logits, labels)
+                logits = model.classify(images)
+                loss = classification_loss(logits, labels)
                 total_loss += loss.item()
 
-                # Apply sigmoid for predictions
                 predictions = torch.sigmoid(logits)
                 pred_binary = (predictions > 0.5).float()
                 all_predictions.extend(pred_binary.cpu().numpy().flatten())
                 all_labels.extend(labels.cpu().numpy().flatten())
 
-        # Calculate metrics
         all_predictions = np.array(all_predictions)
         all_labels = np.array(all_labels)
 
-        accuracy = (all_predictions == all_labels).mean()
-
-        # Calculate F1 score manually to avoid sklearn dependency issues
-        tp = ((all_predictions == 1) & (all_labels == 1)).sum()
-        fp = ((all_predictions == 1) & (all_labels == 0)).sum()
-        fn = ((all_predictions == 0) & (all_labels == 1)).sum()
-        tn = ((all_predictions == 0) & (all_labels == 0)).sum()
-
-        precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-        recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-        f1 = (
-            2 * (precision * recall) / (precision + recall)
-            if (precision + recall) > 0
-            else 0
-        )
-
-        # Calculate balanced accuracy (important for imbalanced data)
-        sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0  # TPR
-        specificity = tn / (tn + fp) if (tn + fp) > 0 else 0  # TNR
-        balanced_acc = (sensitivity + specificity) / 2
+        accuracy = accuracy_score(all_labels, all_predictions)
+        f1 = f1_score(all_labels, all_predictions, average="weighted", zero_division=0)
+        mcc = matthews_corrcoef(all_labels, all_predictions)
 
         return {
             "loss": total_loss / len(val_loader),
             "accuracy": accuracy,
             "f1": f1,
-            "balanced_accuracy": balanced_acc,
-            "sensitivity": sensitivity,
-            "specificity": specificity,
+            "mcc": mcc,
         }
 
-    def full_training(self, train_loader, val_loader):
-        """Complete two-stage training with improvements"""
-        print("Starting Supervised Contrastive Learning Training...")
+    def cross_validate_training(self, full_dataset):
+        """Perform k-fold cross-validation"""
+        print(f"Starting {self.k_folds}-Fold Cross-Validation")
         print(f"Device: {self.device}")
-        print(f"Total parameters: {sum(p.numel() for p in self.model.parameters()):,}")
+        print(f"Epochs: Stage1={self.epochs_stage1}, Stage2={self.epochs_stage2}")
+
+        # Get all labels for stratification
+        all_labels = [full_dataset[i][1].item() for i in range(len(full_dataset))]
+
+        # Stratified K-Fold
+        skf = StratifiedKFold(n_splits=self.k_folds, shuffle=True, random_state=42)
+
+        fold_results = []
+        best_overall_acc = 0.0
+        best_model_state = None
+
+        for fold_idx, (train_indices, val_indices) in enumerate(
+            skf.split(range(len(full_dataset)), all_labels)
+        ):
+            # Create fold datasets
+            train_subset = Subset(full_dataset, train_indices)
+            val_subset = Subset(full_dataset, val_indices)
+
+            # Create data loaders
+            train_loader = DataLoader(
+                train_subset,
+                batch_size=32,  # Smaller batch size for stability
+                shuffle=True,
+                num_workers=2,
+                pin_memory=True,
+            )
+            val_loader = DataLoader(
+                val_subset, batch_size=32, shuffle=False, num_workers=2, pin_memory=True
+            )
+
+            print(
+                f"\nFold {fold_idx + 1}: Train={len(train_subset)}, Val={len(val_subset)}"
+            )
+
+            # Train fold
+            start_time = time.time()
+            model, metrics, history = self._train_single_fold(
+                train_loader, val_loader, fold_idx
+            )
+            fold_time = time.time() - start_time
+
+            # Store results
+            fold_result = {
+                "fold": fold_idx + 1,
+                "train_size": len(train_subset),
+                "val_size": len(val_subset),
+                "final_metrics": metrics,
+                "training_time": fold_time,
+                "history": history,
+            }
+            fold_results.append(fold_result)
+
+            # Save best model across all folds
+            if metrics["accuracy"] > best_overall_acc:
+                best_overall_acc = metrics["accuracy"]
+                best_model_state = model.state_dict().copy()
+                print(
+                    f"*** New best model from fold {fold_idx + 1} (acc={metrics['accuracy']:.4f}) ***"
+                )
+
+            print(
+                f"Fold {fold_idx + 1} completed in {fold_time:.1f}s - "
+                f"Acc: {metrics['accuracy']:.4f}, F1: {metrics['f1']:.4f}, MCC: {metrics['mcc']:.4f}"
+            )
+
+        # Save best model
+        if best_model_state is not None:
+            final_model = SupConModel(
+                backbone=self.backbone, feat_dim=self.feat_dim, num_classes=1
+            ).to(self.device)
+            final_model.load_state_dict(best_model_state)
+            torch.save(best_model_state, self.save_path)
+            print(f"\nBest model saved to: {self.save_path}")
+
+        # Calculate average metrics
+        avg_metrics = self._calculate_average_metrics(fold_results)
+        self.cv_history = {
+            "fold_results": fold_results,
+            "avg_metrics": avg_metrics,
+            "best_accuracy": best_overall_acc,
+        }
+
+        self._print_cv_summary(fold_results, avg_metrics)
+        self._save_cv_results()
+
+        return final_model, avg_metrics
+
+    def _calculate_average_metrics(self, fold_results):
+        """Calculate average metrics across folds"""
+        metrics = ["accuracy", "f1", "mcc", "loss"]
+        avg_metrics = {}
+
+        for metric in metrics:
+            values = [fold["final_metrics"][metric] for fold in fold_results]
+            avg_metrics[f"avg_{metric}"] = np.mean(values)
+            avg_metrics[f"std_{metric}"] = np.std(values)
+
+        return avg_metrics
+
+    def _print_cv_summary(self, fold_results, avg_metrics):
+        """Print cross-validation summary"""
+        print("\n" + "=" * 80)
+        print("CROSS-VALIDATION SUMMARY")
+        print("=" * 80)
+
         print(
-            f"Stage 1 epochs: {self.epochs_stage1}, Stage 2 epochs: {self.epochs_stage2}"
+            f"{'Fold':<6} {'Accuracy':<10} {'F1-Score':<10} {'MCC':<10} {'Val Loss':<10} {'Time(s)':<10}"
         )
-        print(f"Early stopping patience: {self.patience}")
+        print("-" * 70)
 
-        # Stage 1: Contrastive learning
-        self.train_stage1_contrastive(train_loader, val_loader)
+        for result in fold_results:
+            metrics = result["final_metrics"]
+            print(
+                f"{result['fold']:<6} {metrics['accuracy']:<10.4f} "
+                f"{metrics['f1']:<10.4f} {metrics['mcc']:<10.4f} "
+                f"{metrics['loss']:<10.4f} {result['training_time']:<10.1f}"
+            )
 
-        # Reset early stopping for stage 2
+        print("-" * 70)
+        print(
+            f"{'Mean':<6} {avg_metrics['avg_accuracy']:<10.4f} "
+            f"{avg_metrics['avg_f1']:<10.4f} {avg_metrics['avg_mcc']:<10.4f} "
+            f"{avg_metrics['avg_loss']:<10.4f}"
+        )
+        print(
+            f"{'Std':<6} {avg_metrics['std_accuracy']:<10.4f} "
+            f"{avg_metrics['std_f1']:<10.4f} {avg_metrics['std_mcc']:<10.4f} "
+            f"{avg_metrics['std_loss']:<10.4f}"
+        )
+        print("=" * 80)
+
+    def _save_cv_results(self):
+        """Save cross-validation results"""
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        results_dir = Path("reports/cv_results")
+        results_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save detailed results
+        results_path = results_dir / f"supcon_cv_{timestamp}.json"
+        with open(results_path, "w") as f:
+            # Convert numpy types to Python types for JSON serialization
+            json_compatible = self._make_json_compatible(self.cv_history)
+            json.dump(json_compatible, f, indent=2)
+
+        print(f"Cross-validation results saved to: {results_path}")
+
+    def _make_json_compatible(self, obj):
+        """Convert numpy types to Python types for JSON serialization"""
+        if isinstance(obj, dict):
+            return {k: self._make_json_compatible(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._make_json_compatible(v) for v in obj]
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, (np.float32, np.float64)):
+            return float(obj)
+        elif isinstance(obj, (np.int32, np.int64)):
+            return int(obj)
+        else:
+            return obj
+
+
+class FastSupConTrainer:
+    """Faster single-split trainer with better validation strategy"""
+
+    def __init__(
+        self,
+        model,
+        device,
+        learning_rate=0.001,
+        temperature=0.05,
+        epochs_stage1=25,  # Reduced
+        epochs_stage2=15,  # Reduced
+        save_path="models/best_supcon_model_fast.pth",
+        patience=6,  # Reduced
+        min_improvement=0.002,
+    ):
+        self.model = model.to(device)
+        self.device = device
+        self.temperature = temperature
+        self.epochs_stage1 = epochs_stage1
+        self.epochs_stage2 = epochs_stage2
+        self.save_path = save_path
+        self.patience = patience
+        self.min_improvement = min_improvement
+
+        # Loss functions
+        self.contrastive_loss = SupConLoss(temperature=temperature)
+        pos_weight = torch.tensor([2.0]).to(self.device)
+        self.classification_loss = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+
+        # Optimizer and scheduler
+        self.optimizer = None  # Will be created in train_fast
+        self.scheduler = None
+
+        # Training history
+        self.history = {
+            "stage1_loss": [],
+            "stage2_loss": [],
+            "val_loss": [],
+            "val_accuracy": [],
+            "val_f1": [],
+        }
+
         self.best_val_acc = 0.0
-        self.early_stop_counter = 0
+        self.patience_counter = 0
 
-        # Stage 2: Classification fine-tuning
-        self.train_stage2_classification(train_loader, val_loader)
-
-        # Save training history and generate reports
-        self.save_training_history()
-        self.generate_training_plots()
-
-        print(f"\nTraining completed! Best model saved at: {self.save_path}")
-        print(f"Best validation accuracy: {self.best_val_acc:.6f}")
-
-    def save_training_history(self):
-        """Save training history to JSON and CSV"""
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-
-        # Create directories if they don't exist
-        metrics_dir = Path("reports/metrics")
-        metrics_dir.mkdir(parents=True, exist_ok=True)
-
-        # Save as JSON
-        history_path = metrics_dir / f"supcon_{timestamp}_training_history.json"
-        with open(history_path, "w") as f:
-            json.dump(self.history, f, indent=2)
-
-        # Save as CSV
-        history_df = pd.DataFrame(
-            dict([(k, pd.Series(v)) for k, v in self.history.items()])
+        # Stronger augmentation for contrastive learning
+        self.strong_aug = transforms.Compose(
+            [
+                transforms.ToPILImage(),
+                transforms.RandomAffine(
+                    degrees=15, translate=(0.1, 0.1), scale=(0.9, 1.1)
+                ),
+                transforms.RandomHorizontalFlip(p=0.5),
+                transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.2),
+                transforms.RandomAdjustSharpness(1.5, p=0.3),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+                ),
+            ]
         )
-        csv_path = metrics_dir / f"supcon_{timestamp}_training_history.csv"
-        history_df.to_csv(csv_path, index=False)
+        pos_weight = torch.tensor([2.0]).to(device)
+        self.classification_loss = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
-        print(f"Training history saved to: {history_path}")
-        print(f"Training history CSV saved to: {csv_path}")
-
-    def generate_training_plots(self):
-        """Generate and save training plots"""
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        figures_dir = Path("reports/figures")
-        figures_dir.mkdir(parents=True, exist_ok=True)
-
-        # Plot 1: Stage 1 losses
-        plt.figure(figsize=(12, 4))
-
-        plt.subplot(1, 2, 1)
-        plt.plot(
-            self.history["stage1_contrastive_loss"], label="Train Contrastive Loss"
+        # Single optimizer for entire training
+        self.optimizer = optim.AdamW(
+            self.model.parameters(),
+            lr=learning_rate,
+            weight_decay=1e-4,
+            betas=(0.9, 0.999),
         )
-        plt.plot(self.history["stage1_val_loss"], label="Val Contrastive Loss")
-        plt.title("Stage 1: Contrastive Learning")
-        plt.xlabel("Epoch")
-        plt.ylabel("Loss")
-        plt.legend()
-        plt.grid(True)
 
-        plt.subplot(1, 2, 2)
-        plt.plot(
-            self.history["stage2_classification_loss"],
-            label="Train Classification Loss",
+        # Cosine annealing with warm restarts
+        total_epochs = epochs_stage1 + epochs_stage2
+        self.scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
+            self.optimizer, T_0=total_epochs // 3, T_mult=1
         )
-        plt.plot(self.history["stage2_val_loss"], label="Val Classification Loss")
-        plt.title("Stage 2: Classification Fine-tuning")
-        plt.xlabel("Epoch")
-        plt.ylabel("Loss")
-        plt.legend()
-        plt.grid(True)
 
-        plt.tight_layout()
-        plt.savefig(
-            figures_dir / f"supcon_{timestamp}_training_losses.png",
-            dpi=300,
-            bbox_inches="tight",
+        self.history = {
+            "stage1_losses": [],
+            "stage2_losses": [],
+            "val_losses": [],
+            "val_accuracies": [],
+        }
+
+        # Efficient augmentation
+        self.strong_aug = transforms.Compose(
+            [
+                transforms.ToPILImage(),
+                transforms.RandomAffine(degrees=10, translate=(0.08, 0.08)),
+                transforms.RandomHorizontalFlip(p=0.5),
+                transforms.ColorJitter(brightness=0.2, contrast=0.2),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+                ),
+            ]
         )
-        plt.close()
 
-        # Plot 2: Stage 2 metrics
-        plt.figure(figsize=(10, 4))
+    def _create_augmented_views_fast(self, images):
+        """Faster augmentation using tensor operations where possible"""
+        batch_size = images.size(0)
 
-        plt.subplot(1, 2, 1)
-        plt.plot(
-            self.history["stage2_val_accuracy"],
-            label="Validation Accuracy",
-            color="blue",
-        )
-        plt.title("Stage 2: Validation Accuracy")
-        plt.xlabel("Epoch")
-        plt.ylabel("Accuracy")
-        plt.grid(True)
-        plt.legend()
+        # Simple tensor-based augmentations
+        view1 = images.clone()
+        view2 = images.clone()
 
-        plt.subplot(1, 2, 2)
-        plt.plot(
-            self.history["stage2_val_f1"], label="Validation F1-Score", color="green"
-        )
-        plt.title("Stage 2: Validation F1-Score")
-        plt.xlabel("Epoch")
-        plt.ylabel("F1-Score")
-        plt.grid(True)
-        plt.legend()
+        # Random horizontal flip
+        flip_mask = torch.rand(batch_size) > 0.5
+        view1[flip_mask] = torch.flip(view1[flip_mask], dims=[3])
+        view2[flip_mask] = torch.flip(view2[flip_mask], dims=[3])
 
-        plt.tight_layout()
-        plt.savefig(
-            figures_dir / f"supcon_{timestamp}_training_metrics.png",
-            dpi=300,
-            bbox_inches="tight",
-        )
-        plt.close()
+        # Add noise for variation
+        noise1 = torch.randn_like(view1) * 0.01
+        noise2 = torch.randn_like(view2) * 0.01
+        view1 = torch.clamp(view1 + noise1, 0, 1)
+        view2 = torch.clamp(view2 + noise2, 0, 1)
 
-        print(f"Training plots saved to: {figures_dir}")
+        return view1, view2
 
+    def train_fast(self, train_loader, val_loader):
+        """Fast training with efficient strategies"""
+        print("=== Fast SupCon Training ===")
 
-def run_supcon_training(
-    model,
-    train_loader,
-    val_loader,
-    device,
-    save_path="models/best_supcon_model_aug.pth",
-):
-    """Main training function for SupCon model with improved hyperparameters"""
+        best_val_acc = 0.0
+        patience_counter = 0
+        best_state = None
 
-    trainer = SupConTrainer(
-        model=model,
-        device=device,
-        learning_rate=0.0005,  # Reduced learning rate
-        temperature=0.1,  # Better temperature for contrastive learning
-        epochs_stage1=80,  # Increased contrastive learning epochs
-        epochs_stage2=60,  # Increased fine-tuning epochs
-        save_path=save_path,
-        patience=20,  # More patience for medical data
-    )
+        # Stage 1: Contrastive
+        print(f"Stage 1: Contrastive Learning ({self.epochs_stage1} epochs)")
+        for epoch in range(self.epochs_stage1):
+            self.model.train()
+            total_loss = 0.0
 
-    trainer.full_training(train_loader, val_loader)
+            for images, labels in train_loader:
+                images = images.to(self.device)
+                labels = labels.to(self.device).long()
 
-    return trainer
+                # Fast augmentation
+                view1, view2 = self._create_augmented_views_fast(images)
+
+                features1 = self.model(view1, mode="contrastive")
+                features2 = self.model(view2, mode="contrastive")
+                features = torch.stack([features1, features2], dim=1)
+
+                loss = self.contrastive_loss(features, labels)
+
+                self.optimizer.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=0.5)
+                self.optimizer.step()
+                self.scheduler.step()
+
+                total_loss += loss.item()
+
+            avg_loss = total_loss / len(train_loader)
+            self.history["stage1_losses"].append(avg_loss)
+
+            if epoch % 5 == 0:
+                print(f"  Epoch {epoch+1}: Loss = {avg_loss:.4f}")
+
+        # Stage 2: Classification with validation
+        print(f"Stage 2: Classification ({self.epochs_stage2} epochs)")
+        for epoch in range(self.epochs_stage2):
+            self.model.train()
+            total_loss = 0.0
+            num_batches = len(train_loader)
+
+            for batch_idx, (images, labels) in enumerate(train_loader):
+                images = images.to(self.device)
+                labels = labels.to(self.device).float().view(-1, 1)
+
+                logits = self.model.classify(images)
+                loss = self.classification_loss(logits, labels)
+
+                self.optimizer.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                self.optimizer.step()
+
+                total_loss += loss.item()
+
+                # Progress logging every 25% of batches
+                if batch_idx % max(1, num_batches // 4) == 0:
+                    print(
+                        f"    Batch {batch_idx+1}/{num_batches}: Loss = {loss.item():.4f}"
+                    )
+
+            avg_loss = total_loss / len(train_loader)
+            self.history["stage2_losses"].append(avg_loss)
+
+            # Validation every epoch in stage 2
+            val_metrics = self._validate_fast(val_loader)
+            self.history["val_losses"].append(val_metrics["loss"])
+            self.history["val_accuracies"].append(val_metrics["accuracy"])
+
+            print(
+                f"  Epoch {epoch+1}: Train Loss = {avg_loss:.4f}, "
+                f"Val Loss = {val_metrics['loss']:.4f}, "
+                f"Val Acc = {val_metrics['accuracy']:.4f}"
+            )
+
+            # Early stopping based on validation accuracy
+            if val_metrics["accuracy"] > best_val_acc + self.min_improvement:
+                best_val_acc = val_metrics["accuracy"]
+                best_state = self.model.state_dict().copy()
+                patience_counter = 0
+                print(f"    *** New best accuracy: {best_val_acc:.4f} ***")
+            else:
+                patience_counter += 1
+
+            if patience_counter >= self.patience:
+                print(f"    Early stopping at epoch {epoch+1}")
+                break
+
+            self.scheduler.step()
+
+        # Save best model
+        if best_state is not None:
+            torch.save(best_state, self.save_path)
+            print(f"\nTraining completed! Best model saved: {self.save_path}")
+            print(f"Best validation accuracy: {best_val_acc:.4f}")
+        else:
+            print("\nWarning: No improvement found during training")
+
+    def _validate_fast(self, val_loader):
+        """Fast validation for stage 2"""
+        self.model.eval()
+        total_loss = 0.0
+        correct = 0
+        total = 0
+
+        with torch.no_grad():
+            for images, labels in val_loader:
+                images = images.to(self.device)
+                labels = labels.to(self.device).float().view(-1, 1)
+
+                logits = self.model.classify(images)
+                loss = self.classification_loss(logits, labels)
+                total_loss += loss.item()
+
+                # Calculate accuracy
+                predictions = torch.sigmoid(logits)
+                pred_binary = (predictions > 0.5).float()
+                correct += (pred_binary == labels).sum().item()
+                total += labels.size(0)
+
+        accuracy = correct / total
+        return {"loss": total_loss / len(val_loader), "accuracy": accuracy}

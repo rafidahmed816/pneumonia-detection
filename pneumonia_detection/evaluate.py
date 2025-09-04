@@ -129,11 +129,11 @@ except Exception:
 
 # SupCon wrapper
 try:
-    from pneumonia_detection.supcon.model import PneumoniaSupConModel
+    from pneumonia_detection.supcon.model import SupConModel
 
     _HAS_SUPCON = True
 except Exception:
-    PneumoniaSupConModel = None
+    SupConModel = None
     _HAS_SUPCON = False
 
 
@@ -218,13 +218,11 @@ def _load_model(
             device
         )  # Use pretrained flag based on your need
     elif backbone == "supcon":
-        if not _HAS_SUPCON or PneumoniaSupConModel is None:
+        if not _HAS_SUPCON or SupConModel is None:
             raise RuntimeError(
-                "PneumoniaSupConModel not available. Did you create pneumonia_detection/supcon/model.py?"
+                "SupConModel not available. Did you create pneumonia_detection/supcon/model.py?"
             )
-        model = PneumoniaSupConModel(
-            backbone="resnet18", feat_dim=256, num_classes=1
-        ).to(device)
+        model = SupConModel(backbone="resnet18", feat_dim=128, num_classes=1).to(device)
     else:
         model = PneumoniaCNN().to(device)
 
