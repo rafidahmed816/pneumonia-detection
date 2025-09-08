@@ -1,0 +1,801 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+% The preceding line is only needed to identify funding in the first footnote. If that is unneeded, please comment it out.
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{algorithm}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{url}
+\usepackage{listings}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{adjustbox}
+
+% Define colors for code
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+% Code listing style
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\scriptsize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,               
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2,
+    frame=single
+}
+
+\lstset{style=mystyle}
+
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+\begin{document}
+
+\title{Deep Learning-Based Pneumonia Detection from Chest X-Ray Images: A Comparative Analysis of CNN, ResNet18, DenseNet121 and Supervised Contrasive Learning Architectures }
+
+\author{
+\IEEEauthorblockN{Siyam Bhuiyan}%
+\IEEEauthorblockA{ID: 210041215\\
+\textit{Computer Science \& Engineering} \\
+Islamic University of Technology \\
+Gazipur, Bangladesh \\
+siyambhuiyan@iut-dhaka.edu}
+\and
+\IEEEauthorblockN{Muntasir Hossain}%
+\IEEEauthorblockA{ID: 210041265\\ 
+\textit{Computer Science \& Engineering} \\
+Islamic University of Technology \\
+Gazipur, Bangladesh \\
+muntasir@iut-dhaka.edu}
+\and
+\IEEEauthorblockN{Rafid Ahmed}%
+\IEEEauthorblockA{ID: 210041232\\ 
+\textit{Computer Science \& Engineering} \\
+Islamic University of Technology \\
+Gazipur, Bangladesh \\
+rafidahmed816@iut-dhaka.edu}
+}
+
+
+
+\maketitle
+
+\begin{abstract}
+Pneumonia remains a leading cause of mortality worldwide, necessitating rapid and accurate diagnosis for effective treatment. This paper presents a comprehensive comparative study of deep learning architectures for automated pneumonia detection from chest X-ray images. We implemented and evaluated five distinct approaches: a custom Convolutional Neural Network (CNN) without augmentation as baseline, CNN with medical-specific data augmentation, ResNet18 with transfer learning, DenseNet121 with dense connections, and a Supervised Contrastive Learning (SupCon) approach with two-stage training. Our experiments were conducted on a dataset of 5,832 chest X-ray images from the Kaggle Pneumonia Dataset. Results demonstrate that DenseNet121 achieved superior performance with 89.10\% accuracy, 88.76\% weighted F1-score, and 0.7702 Matthews Correlation Coefficient (MCC), followed by CNN with augmentation (86.06\% accuracy), SupCon (85.58\% accuracy), and ResNet18 (85.90\% accuracy). The SupCon approach demonstrated exceptional pneumonia sensitivity (99\% recall) with only 2 false negatives, making it particularly suitable for screening applications where missing pneumonia cases carries critical risk. The baseline CNN without augmentation achieved only 76.60\% accuracy, highlighting the critical importance of data augmentation in medical imaging applications. Data augmentation improved CNN performance by 9.46\%, reducing false positives from 143 to 71 cases. All models demonstrated high pneumonia sensitivity (96-99\%), crucial for clinical screening applications. This study provides practical insights for deploying automated pneumonia detection systems in healthcare settings and establishes benchmarks for future research in medical image analysis.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Deep Learning, Pneumonia Detection, Chest X-Ray Analysis, Convolutional Neural Networks, Medical Image Processing, Transfer Learning, Data Augmentation
+\end{IEEEkeywords}
+
+\section{Introduction}
+
+Pneumonia is a respiratory infection that causes inflammation in the air sacs of one or both lungs, leading to approximately 4 million deaths annually worldwide according to the World Health Organization (WHO). Early and accurate diagnosis is critical for effective treatment, particularly for vulnerable populations including children under 5 years and elderly patients. Traditional pneumonia diagnosis relies heavily on chest X-ray interpretation by radiologists, a process that is time-consuming, subjective, and prone to human error, especially in resource-constrained healthcare environments.
+
+The emergence of deep learning technologies has revolutionized medical image analysis, offering promising solutions for automated disease detection. Convolutional Neural Networks (CNNs) have demonstrated exceptional performance in medical imaging tasks, capable of learning complex patterns directly from raw pixel data without manual feature engineering \cite{lecun2015deep}. Recent studies have shown that deep learning models can achieve radiologist-level performance in various medical imaging applications \cite{rajpurkar2017chexnet}.
+
+However, the application of deep learning to medical imaging presents unique challenges, including limited training data, class imbalance, and the need for high sensitivity to avoid missing critical diagnoses. Data augmentation techniques have emerged as crucial strategies for addressing these challenges, particularly in medical imaging where obtaining large labeled datasets is expensive and time-intensive.
+
+This paper presents a comprehensive comparative analysis of four deep learning approaches for automated pneumonia detection from chest X-ray images: (1) a custom CNN without augmentation serving as baseline, (2) the same CNN architecture with medical-specific data augmentation, (3) ResNet18 leveraging transfer learning from ImageNet, and (4) DenseNet121 utilizing dense connections for efficient feature reuse. Our contributions include:
+
+\begin{itemize}
+\item Comprehensive evaluation of multiple deep learning architectures on identical dataset and evaluation metrics
+\item Implementation of medical imaging-specific data augmentation strategies
+\item Quantitative analysis of data augmentation impact on model performance
+\item Clinical interpretation of results with emphasis on practical deployment considerations
+\item Establishment of reproducible benchmarks for pneumonia detection research
+\end{itemize}
+
+\section{Related Work}
+
+\subsection{Deep Learning in Medical Imaging}
+
+Deep learning has transformed medical image analysis across various modalities and applications. Krizhevsky et al. \cite{krizhevsky2012imagenet} demonstrated the breakthrough potential of CNNs in the ImageNet challenge, which subsequently inspired numerous medical imaging applications. The hierarchical feature learning capability of CNNs makes them particularly suitable for medical image analysis, where subtle patterns and spatial relationships are crucial for accurate diagnosis.
+
+\subsection{Pneumonia Detection Systems}
+
+Rajpurkar et al. \cite{rajpurkar2017chexnet} developed CheXNet, a 121-layer CNN that achieved radiologist-level performance on a dataset of over 100,000 chest X-rays. Their work demonstrated the feasibility of automated chest X-ray interpretation for multiple pathologies, including pneumonia. However, their approach focused primarily on large-scale datasets and did not extensively explore the impact of data augmentation strategies.
+
+Several studies have investigated CNN architectures for pneumonia detection. Kermany et al. \cite{kermany2018medical} utilized transfer learning with pre-trained models, achieving over 90\% accuracy on pneumonia detection. However, their evaluation was limited to a single architecture without comprehensive comparison of different approaches.
+
+\subsection{Data Augmentation in Medical Imaging}
+
+Data augmentation has proven essential for improving deep learning performance, particularly in medical imaging where datasets are typically smaller than natural image datasets. Shorten and Khoshgoftaar \cite{shorten2019survey} provided a comprehensive survey of data augmentation techniques, emphasizing the importance of domain-specific considerations.
+
+In medical imaging, augmentation strategies must preserve anatomical validity while increasing data diversity. Geometric transformations such as rotation, translation, and scaling must be carefully constrained to maintain clinical relevance. Intensity-based augmentations can simulate variations in imaging equipment and acquisition parameters.
+
+\section{Methodology}
+
+\subsection{Dataset Description and Visualization}
+
+We utilized the Chest X-Ray Images (Pneumonia) dataset from Kaggle \cite{kermany2018medical}, containing 5,832 chest X-ray images collected from the Guangzhou Women and Children's Medical Center. The dataset is organized into two classes: NORMAL (healthy lungs) and PNEUMONIA (infected lungs), with the distribution shown in Table \ref{tab:dataset}.
+
+\begin{table}[htbp]
+\caption{Dataset Distribution}
+\begin{center}
+\begin{tabular}{|l|c|c|c|}
+\hline
+\textbf{Split} & \textbf{Normal} & \textbf{Pneumonia} & \textbf{Total} \\
+\hline
+Training & 1,074 & 3,101 & 4,175 \\
+Validation & 277 & 784 & 1,061 \\
+Test & 234 & 390 & 624 \\
+\hline
+\textbf{Total} & \textbf{1,585} & \textbf{4,275} & \textbf{5,860} \\
+\hline
+\end{tabular}
+\label{tab:dataset}
+\end{center}
+\end{table}
+
+The dataset exhibits significant class imbalance with approximately 73\% pneumonia cases and 27\% normal cases, reflecting real-world clinical scenarios where pneumonia cases are more frequently encountered in clinical practice.
+
+% Placeholder for dataset visualization figure
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.48\textwidth]{Figures/sample_images.png}}
+\caption{Dataset distribution and sample images showing normal vs pneumonia cases}
+\label{fig:dataset_viz}
+\end{figure}
+
+\subsection{Data Preprocessing Pipeline}
+
+\subsubsection{Transfer Learning Preprocessing}
+
+For ResNet and DenseNet models requiring RGB input and ImageNet compatibility:
+
+\begin{lstlisting}[language=Python, caption=Transfer Learning Preprocessing]
+def build_resnet_transform():
+    return transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.Grayscale(num_output_channels=3),
+        transforms.ToTensor(),
+        transforms.Normalize(
+            mean=[0.485, 0.456, 0.406], 
+            std=[0.229, 0.224, 0.225]
+        )
+    ])
+\end{lstlisting}
+
+\subsection{Data Augmentation Strategy}
+
+Medical image augmentation requires careful consideration to maintain anatomical validity while increasing data diversity. Our augmentation strategy incorporates clinically appropriate transformations:
+
+\begin{lstlisting}[language=Python, caption=Medical Image Augmentation Pipeline]
+def build_train_augment_transform():
+    return transforms.Compose([
+        transforms.Grayscale(num_output_channels=1),
+        transforms.Resize((224, 224)),
+        transforms.RandomAffine(
+            degrees=5,              
+            translate=(0.04, 0.04), 
+            scale=(0.99, 1.01),     
+            shear=(-2, 2)           
+        ),
+        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.RandomAdjustSharpness(1.2, p=0.25),
+        transforms.RandomAutocontrast(p=0.25),
+        transforms.RandomEqualize(p=0.15),
+        transforms.GaussianBlur(
+            kernel_size=3, sigma=(0.1, 1.0)
+        ),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.5], std=[0.5])
+    ])
+\end{lstlisting}
+
+The augmentation parameters are carefully chosen to simulate realistic variations in X-ray acquisition while preserving diagnostic features.
+
+\subsection{Model Architectures}
+
+\subsubsection{Custom CNN Architecture}
+
+We designed a custom CNN architecture specifically optimized for grayscale chest X-ray analysis. The architecture consists of three progressive convolutional blocks followed by fully connected layers for classification.
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.48\textwidth]{Figures/cnn_arch3.jpg}}
+\caption{Custom CNN architecture designed for chest X-ray classification.}
+\label{fig:cnn_arch}
+\end{figure}
+
+\textbf{Architecture Overview:}
+\begin{itemize}
+\item Input: 224×224×1 grayscale images
+\item Three convolutional blocks with progressive channel expansion
+\item Batch normalization for training stability
+\item Dropout regularization to prevent overfitting
+\item Binary classification output with sigmoid activation
+\end{itemize}
+
+% i want to add a image here called cnn_arch
+
+\textbf{Key Design Decisions:}
+\begin{itemize}
+\item Progressive channel expansion (1→32→64→128) captures hierarchical features
+\item 3×3 kernels preserve fine-grained medical details
+\item Batch normalization stabilizes training dynamics
+\item Dropout layers (0.5, 0.3) provide regularization
+\end{itemize}
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.48\textwidth]{Figures/res_main.jpg}}
+\caption{ResNet18 architecture adapted for binary pneumonia classification.}
+\label{fig:resnet_arch}
+\end{figure}
+
+\subsubsection{ResNet18 Implementation}
+
+ResNet18 leverages residual connections to enable training of deeper networks while avoiding vanishing gradient problems. We adapted the architecture for binary pneumonia classification.
+
+
+\textbf{Architecture Modifications:}
+\begin{itemize}
+\item Utilizes ImageNet pre-trained weights for transfer learning
+\item Modified final classification layer for binary output
+\item Input converted to 3-channel RGB for compatibility
+\item Residual connections preserve gradient flow
+\end{itemize}
+
+\textbf{Transfer Learning Benefits:}
+\begin{itemize}
+\item Pre-trained features from ImageNet provide robust low-level representations
+\item Faster convergence compared to training from scratch
+\item Improved generalization on limited medical data
+\item Proven architecture reliability
+\end{itemize}
+
+\subsubsection{DenseNet121 Implementation}
+
+DenseNet121 \cite{huang2017densely} implements dense connectivity patterns where each layer receives feature maps from all preceding layers, promoting feature reuse and parameter efficiency.
+
+\textbf{Dense Connectivity Advantages:}
+\begin{itemize}
+\item Maximum information flow between layers
+\item Feature reuse reduces parameter redundancy
+\item Gradient flow improvement through skip connections
+\item Enhanced feature propagation
+\end{itemize}
+
+\textbf{Architecture Benefits:}
+\begin{itemize}
+\item Dense connections concatenate features from all previous layers
+\item Efficient parameter usage through feature reuse
+\item Strong gradient flow prevents vanishing gradients
+\item Excellent performance on limited training data
+\end{itemize}
+
+\subsection{Training Configuration and Optimization}
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.48\textwidth]{Figures/dataset_distribution.png}}
+\caption{Comparison of class distribution showing the imbalance (73\% pneumonia vs. 27\% normal).}
+\label{fig:dataset_samples}
+\end{figure}
+\subsubsection{Class Imbalance Handling}
+
+To address the significant class imbalance (73\% pneumonia, 27\% normal), we implemented weighted random sampling during training:
+
+\begin{lstlisting}[language=Python, caption=Weighted Sampling Implementation]
+def get_weighted_sampler(dataset):
+    labels = np.array(dataset.labels)
+    class_counts = np.bincount(labels)
+    class_weights = 1.0 / (class_counts + 1e-8)
+    sample_weights = class_weights[labels]
+    
+    return WeightedRandomSampler(
+        weights=torch.DoubleTensor(sample_weights),
+        num_samples=len(sample_weights),
+        replacement=True
+    )
+\end{lstlisting}
+
+The implementation works as follows:
+\begin{itemize}
+    \item Extract all class labels from the dataset.
+    \item Count the number of samples in each class using \text{np.bincount}.
+    \item Compute inverse class frequencies to assign higher weights to underrepresented classes.
+    \item Map these weights to each sample to generate \text{sample\_weights}.
+    \item Use \text{WeightedRandomSampler} to sample data points such that minority classes are more likely to be selected.
+\end{itemize}
+
+
+\subsubsection{Training Hyperparameters}
+All models were trained using consistent hyperparameters for fair comparison:
+
+\begin{table}[htbp]
+\caption{Training Configuration}
+\begin{center}
+\begin{tabular}{|l|c|}
+\hline
+\textbf{Parameter} & \textbf{Value} \\
+\hline
+Optimizer & Adam \\
+Learning Rate & 0.0001 \\
+Batch Size & 32 \\
+Maximum Epochs & 30 \\
+Early Stopping Patience & 5 epochs \\
+Loss Function & Binary Cross-Entropy \\
+Class Balancing & Weighted Random Sampling \\
+\hline
+\end{tabular}
+\label{tab:hyperparameters}
+\end{center}
+\end{table}
+
+
+\subsection{Evaluation Metrics}
+
+We employed multiple evaluation metrics to provide comprehensive performance assessment:
+
+\begin{itemize}
+\item \textbf{Accuracy:} Overall correctness of predictions
+\item \textbf{Precision:} True positives / (True positives + False positives)
+\item \textbf{Recall (Sensitivity):} True positives / (True positives + False negatives)
+\item \textbf{F1-Score:} Harmonic mean of precision and recall
+\item \textbf{Matthews Correlation Coefficient (MCC):} Balanced measure for imbalanced datasets
+\item \textbf{Balanced Accuracy:} Average of sensitivity and specificity
+\end{itemize}
+
+\section{Experimental Results}
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.48\textwidth]{Figures/cnn_aug.png}}
+\caption{CNN augmentation comparison}
+\label{fig:cnn_aug}
+\end{figure}
+
+
+
+\subsection{Overall Performance Comparison}
+\begin{table}[htbp]
+\caption{Model Performance Comparison on Test Set}
+\begin{center}
+\begin{tabular}{|l|c|c|c|c|c|}
+\hline
+\textbf{Model} & \textbf{Acc.} & \textbf{F1} & \textbf{Prec.} & \textbf{Rec.} & \textbf{MCC} \\
+\hline
+CNN No-Aug & 76.60\% & 73.39\% & 82.0\% & 77.0\% & 0.516 \\
+CNN Aug & 86.06\% & 85.59\% & 87.0\% & 86.0\% & 0.702 \\
+ResNet18 & 85.90\% & 85.26\% & 87.0\% & 86.0\% & 0.702 \\
+DenseNet121 & \textbf{89.10\%} & \textbf{88.76\%} & \textbf{90.0\%} & \textbf{89.0\%} & \textbf{0.770} \\
+\hline
+\end{tabular}
+\label{tab:results}
+\end{center}
+\end{table}
+
+DenseNet121 achieved the highest performance across all metrics, followed by CNN with augmentation and ResNet18 with comparable performance. The baseline CNN without augmentation showed significantly lower performance, demonstrating the critical importance of data augmentation.
+
+
+\subsection{Matrics Analysis}
+
+Understanding the key matrics across the model performance comparisons. Figure \ref{fig:dataset_samples} shows representative samples for each model
+
+% Placeholder for dataset sample images
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.48\textwidth]{Figures/performance_comparison.png}}
+\caption{perfrmance matrics}
+\label{fig:dataset_samples}
+\end{figure}
+
+
+
+\begin{table}[htbp]
+\caption{Class-wise Performance Analysis}
+\begin{center}
+\begin{tabular}{|l|c|c|c|c|}
+\hline
+\multirow{2}{*}{\textbf{Model}} & \multicolumn{2}{c|}{\textbf{Normal}} & \multicolumn{2}{c|}{\textbf{Pneumonia}} \\
+\cline{2-5}
+& \textbf{Prec.} & \textbf{Rec.} & \textbf{Prec.} & \textbf{Rec.} \\
+\hline
+CNN No-Aug & 97\% & 39\% & 73\% & 99\% \\
+CNN Aug & 91\% & 70\% & 84\% & 96\% \\
+ResNet18 & 94\% & 67\% & 83\% & 97\% \\
+DenseNet121 & 96\% & 74\% & 86\% & 98\% \\
+\hline
+\end{tabular}
+\label{tab:classwise}
+\end{center}
+\end{table}
+
+All models demonstrated high pneumonia sensitivity (96-99\%), essential for clinical screening applications. DenseNet121 achieved the best balance between normal and pneumonia detection performance.
+
+\subsubsection{Confusion Matrix Analysis}
+
+Table \ref{tab:confusion} presents confusion matrices for key models, providing insight into error patterns.
+
+\begin{table}[htbp]
+\caption{Confusion Matrices (True vs Predicted)}
+\begin{center}
+\begin{tabular}{|l|c|c|c|c|}
+\hline
+\multirow{2}{*}{\textbf{Model}} & \multicolumn{2}{c|}{\textbf{Normal Pred}} & \multicolumn{2}{c|}{\textbf{Pneumonia Pred}} \\
+\cline{2-5}
+& \textbf{Normal} & \textbf{Pneumonia} & \textbf{Normal} & \textbf{Pneumonia} \\
+\hline
+CNN No-Aug & 91 & 3 & 143 & 387 \\
+CNN Aug & 163 & 16 & 71 & 374 \\
+ResNet18 & 156 & 10 & 78 & 380 \\
+DenseNet121 & 174 & 8 & 60 & 382 \\
+\hline
+\end{tabular}
+\label{tab:confusion}
+\end{center}
+\end{table}
+
+DenseNet121 achieved the lowest false positive rate (60 vs 143 for baseline CNN), crucial for reducing radiologist workload in clinical settings.
+
+\subsection{Impact of Data Augmentation}
+
+The comparison between CNN with and without augmentation reveals significant improvements:
+
+\begin{itemize}
+\item \textbf{Accuracy Improvement:} +9.46\% (76.60\% → 86.06\%)
+\item \textbf{F1-Score Improvement:} +12.20\% (73.39\% → 85.59\%)
+\item \textbf{False Positive Reduction:} -50\% (143 → 71 cases)
+\item \textbf{Normal Recall Improvement:} +31\% (39\% → 70\%)
+\end{itemize}
+
+These results demonstrate that appropriate data augmentation is essential for achieving clinically viable performance in medical imaging applications.
+
+\section{Supervised Contrastive Learning Implementation}
+
+We implemented a fifth approach using Supervised Contrastive Learning (SupCon) \cite{khosla2020supervised}, which leverages label information to learn better feature representations by pulling together samples of the same class while pushing apart samples from different classes in the learned embedding space.
+
+\subsubsection{SupCon Architecture}
+
+The SupCon model consists of three main components: a backbone encoder, a projection head for contrastive learning, and a classification head for final predictions.
+
+\textbf{Backbone Encoder:} We utilized ResNet18 pre-trained on ImageNet as the feature extraction backbone. The final fully connected layer is replaced with an identity function to extract feature representations:
+
+\begin{lstlisting}[language=Python, caption=SupCon Backbone Configuration]
+backbone_model = models.resnet18(weights="IMAGENET1K_V1")
+dim_in = backbone_model.fc.in_features  // 512 features
+backbone_model.fc = nn.Identity()
+self.encoder = backbone_model
+\end{lstlisting}
+
+\textbf{Projection Head:} A non-linear projection head maps the backbone features to a lower-dimensional space optimized for contrastive learning:
+
+\begin{equation}
+h = f_{\theta}(x), \quad z = g_{\phi}(h)
+\end{equation}
+
+where $f_{\theta}$ is the backbone encoder and $g_{\phi}$ is the projection head implemented as:
+
+\begin{lstlisting}[language=Python, caption=Projection Head Architecture]
+self.projection_head = nn.Sequential(
+    nn.Linear(dim_in, dim_in // 2),      // 512 -> 256
+    nn.BatchNorm1d(dim_in // 2),
+    nn.ReLU(inplace=True),
+    nn.Dropout(dropout_rate),
+    nn.Linear(dim_in // 2, feat_dim),    // 256 -> 128
+)
+\end{lstlisting}
+
+\textbf{Classification Head:} A separate head performs the final binary classification:
+
+\begin{lstlisting}[language=Python, caption=Classification Head Architecture]
+self.classification_head = nn.Sequential(
+    nn.Dropout(dropout_rate),
+    nn.Linear(feat_dim, feat_dim // 2),  // 128 -> 64
+    nn.ReLU(inplace=True),
+    nn.Dropout(dropout_rate * 0.5),
+    nn.Linear(feat_dim // 2, num_classes), // 64 -> 1
+)
+\end{lstlisting}
+
+\subsubsection{Supervised Contrastive Loss Function}
+
+The SupCon loss function maximizes agreement between augmented versions of samples from the same class while minimizing agreement with samples from different classes. For a given anchor sample $i$ with label $y_i$, the loss is defined as:
+
+\begin{equation}
+\mathcal{L}_{SupCon} = \sum_{i \in I} \mathcal{L}_{SupCon}^{(i)}
+\end{equation}
+
+where the loss for sample $i$ is:
+
+\begin{equation}
+\mathcal{L}_{SupCon}^{(i)} = -\frac{1}{|P(i)|} \sum_{p \in P(i)} \log \frac{\exp(z_i \cdot z_p / \tau)}{\sum_{a \in A(i)} \exp(z_i \cdot z_a / \tau)}
+\end{equation}
+
+where:
+\begin{itemize}
+\item $P(i) = \{p \in A(i) : y_p = y_i\}$ is the set of positive samples (same class)
+\item $A(i) = I \setminus \{i\}$ is the set of all other samples in the batch
+\item $\tau$ is the temperature parameter controlling the concentration of the distribution
+\item $z_i$ and $z_p$ are L2-normalized projected features
+\end{itemize}
+
+The key insight is that $P(i)$ includes all samples with the same label as the anchor, not just augmented versions of the same image, enabling the model to learn class-discriminative features.
+
+\subsubsection{Two-Stage Training Protocol}
+
+We employed a two-stage training protocol to optimize the SupCon model effectively:
+
+\textbf{Stage 1 - Contrastive Representation Learning :}
+During this stage, we train only with the contrastive loss to learn robust feature representations. For each batch, we create two augmented views of each image using medical imaging-appropriate transformations:
+
+\begin{lstlisting}[language=Python, caption=Strong Augmentation for Contrastive Learning]
+strong_aug = transforms.Compose([
+    transforms.RandomAffine(degrees=15, translate=(0.1, 0.1), 
+                          scale=(0.9, 1.1)),
+    transforms.RandomHorizontalFlip(p=0.5),
+    transforms.ColorJitter(brightness=0.3, contrast=0.3, 
+                          saturation=0.2),
+    transforms.RandomAdjustSharpness(1.5, p=0.3),
+    transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 1.0))
+])
+\end{lstlisting}
+
+The contrastive features are computed and normalized:
+\begin{equation}
+z_1 = \frac{g_{\phi}(f_{\theta}(T_1(x)))}{||g_{\phi}(f_{\theta}(T_1(x)))||_2}, \quad z_2 = \frac{g_{\phi}(f_{\theta}(T_2(x)))}{||g_{\phi}(f_{\theta}(T_2(x)))||_2}
+\end{equation}
+
+where $T_1$ and $T_2$ are different augmentation transformations.
+
+\textbf{Stage 2 - Classification Fine-tuning :}
+In the second stage, we freeze the learned representations and train the classification head using binary cross-entropy loss with class balancing:
+
+\begin{equation}
+\mathcal{L}_{BCE} = -\frac{1}{N} \sum_{i=1}^{N} w_i [y_i \log(\sigma(h_{\psi}(z_i))) + (1-y_i) \log(1-\sigma(h_{\psi}(z_i)))]
+\end{equation}
+
+where $h_{\psi}$ is the classification head, $\sigma$ is the sigmoid function, and $w_i$ are class weights to handle imbalance.
+
+\subsubsection{Hyperparameter Configuration}
+
+The SupCon model was trained with the following optimized hyperparameters:
+
+\begin{table}[htbp]
+\caption{SupCon Training Configuration}
+\begin{center}
+\begin{tabular}{|l|c|}
+\hline
+\textbf{Parameter} & \textbf{Value} \\
+\hline
+Temperature ($\tau$) & 0.05 \\
+Feature Dimension & 128 \\
+Stage 1 Epochs & 25 \\
+Stage 2 Epochs & 15 \\
+Learning Rate & 0.001 \\
+Optimizer & AdamW \\
+Weight Decay & $1 \times 10^{-4}$ \\
+Batch Size & 32 \\
+Dropout Rate & 0.2 \\
+Class Weight (Pneumonia) & 2.0 \\
+\hline
+\end{tabular}
+\label{tab:supcon_hyperparams}
+\end{center}
+\end{table}
+
+\subsubsection{SupCon Results and Analysis}
+
+The SupCon approach achieved competitive performance, demonstrating the effectiveness of contrastive learning for medical image classification:
+
+\begin{table}[htbp]
+\caption{SupCon Performance Comparison}
+\label{tab:supcon_results}
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}l c c c c c c@{}}
+\toprule
+Model & Acc & F1 & MCC & Ba1Acc & NORMAL & PNEUMONIA \\
+\midrule
+CNN & 0.8494 & 0.8417 & 0.6823 & 0.8077 & 0.64 & 0.97 \\
+ResNet & 0.8590 & 0.8526 & 0.7023 & 0.8205 & 0.67 & 0.97 \\
+DenseNet & 0.8910 & 0.8876 & 0.7702 & 0.8615 & 0.74 & 0.98 \\
+SupCon & 0.8558 & 0.8467 & 0.7043 & 0.8094 & 0.62 & 0.99 \\
+\bottomrule
+\end{tabular}
+\end{table}
+\textbf{Class-wise Performance Analysis:}
+
+\begin{table}[htbp]
+\caption{SupCon Class-wise Performance}
+\begin{center}
+\begin{tabular}{|l|c|c|c|c|}
+\hline
+\multirow{2}{*} \textbf{Class} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-Score} & \textbf{Support} \\
+\hline
+NORMAL & 0.99 & 0.62 & 0.76 & 234 \\
+PNEUMONIA & 0.82 & 0.99 & 0.90 & 390 \\
+\hline
+\textbf{Weighted Avg} & \textbf{0.88} & \textbf{0.86} & \textbf{0.85} & \textbf{624} \\
+\hline
+\end{tabular}
+\label{tab:supcon_classwise}
+\end{center}
+\end{table}
+\clearpage
+\textbf{Confusion Matrix Analysis:}
+
+\begin{table}[htbp]
+\caption{SupCon Confusion Matrix}
+\begin{center}
+\begin{tabular}{|c|c|c|}
+\hline
+\multirow{2}{*}{\textbf{Actual}} & \multicolumn{2}{c|}{\textbf{Predicted}} \\
+\cline{2-3}
+& \textbf{NORMAL} & \textbf{PNEUMONIA} \\
+\hline
+\textbf{NORMAL} & 146 & 88 \\
+\textbf{PNEUMONIA} & 2 & 388 \\
+\hline
+\end{tabular}
+\label{tab:supcon_confusion}
+\end{center}
+\end{table}
+
+\subsubsection{SupCon Performance Analysis}
+
+The SupCon approach demonstrates several notable characteristics:
+
+\textbf{Strengths:}
+\begin{itemize}
+\item \textbf{High Pneumonia Sensitivity:} Achieved 99\% recall for pneumonia detection, the highest among all models, making it excellent for screening applications where missing pneumonia cases is critical.
+\item \textbf{Exceptional Specificity:} With only 2 false negatives, the model rarely misses actual pneumonia cases, crucial for patient safety.
+\item \textbf{Robust Feature Learning:} The two-stage training protocol enables learning of discriminative features that generalize well to the classification task.
+\item \textbf{Competitive Overall Performance:} Achieved 85.58\% accuracy, positioning it between the augmented CNN and transfer learning approaches.
+\end{itemize}
+
+\textbf{Limitations:}
+\begin{itemize}
+\item \textbf{High False Positive Rate:} 88 false positives indicate the model tends to over-diagnose pneumonia in normal cases, potentially increasing radiologist workload.
+\item \textbf{Training Complexity:} The two-stage training protocol requires careful hyperparameter tuning and longer training time compared to single-stage approaches.
+\item \textbf{Lower Normal Class Precision:} While achieving high pneumonia detection, the model struggles with normal case identification (62\% recall for normal cases).
+\end{itemize}
+
+\textbf{Clinical Implications:}
+The SupCon model's characteristics make it particularly suitable for initial screening applications where the primary goal is to avoid missing pneumonia cases. The 99\% pneumonia sensitivity ensures that almost all pneumonia cases are flagged for radiologist review, while the 2 false negatives represent an acceptably low risk of missed diagnoses. However, the high false positive rate (88 cases) may require careful integration into clinical workflows to manage radiologist workload effectively.
+
+\textbf{Comparison with Other Approaches:}
+While SupCon did not achieve the highest overall accuracy compared to DenseNet121 (89.10\%), it demonstrated unique advantages in terms of pneumonia detection sensitivity. The contrastive learning approach successfully learned representations that excel at identifying pneumonia patterns, even if they occasionally misclassify normal cases as pneumonia. This conservative approach aligns well with medical screening requirements where sensitivity is often prioritized over specificity.
+
+
+\section{Discussion}
+
+\subsection{Clinical Significance}
+
+From a clinical perspective, the results demonstrate varying strengths of different approaches:
+
+\textbf{DenseNet121} emerges as the optimal choice for balanced screening applications, achieving 89.10\% accuracy with excellent precision-recall balance. The model's 98\% pneumonia sensitivity ensures minimal missed diagnoses, while 74\% normal recall reduces false alarms.
+
+\textbf{SupCon} demonstrates exceptional clinical utility for high-sensitivity screening scenarios, achieving the highest pneumonia sensitivity (99\%) with only 2 false negatives across the entire test set. This ultra-conservative approach makes it ideal for initial screening applications where missing a pneumonia diagnosis carries severe consequences, though the 88 false positives require careful workflow integration to manage radiologist review burden.
+
+\textbf{ResNet18} shows competitive performance (85.90\% accuracy) with 97\% pneumonia sensitivity, making it suitable for high-sensitivity screening scenarios where missing pneumonia cases is critically unacceptable.
+
+\textbf{CNN with Augmentation} provides acceptable performance (86.06\% accuracy) with lower computational requirements, suitable for resource-constrained environments.
+
+\subsection{Technical Insights}
+
+\subsubsection{Architecture Comparison}
+
+The superior performance of DenseNet121 can be attributed to its dense connectivity pattern, which promotes feature reuse and gradient flow. This architecture is particularly beneficial for medical imaging where subtle features may be crucial for accurate diagnosis.
+
+The SupCon approach's effectiveness stems from its two-stage training protocol that first learns discriminative feature representations through contrastive learning before fine-tuning for classification. The contrastive learning stage enables the model to learn robust features that distinguish between normal and pneumonia cases by maximizing agreement between augmented views of the same class while pushing apart different classes in the embedding space. This representation learning approach proves particularly effective for medical imaging where subtle pathological patterns require sophisticated feature extraction.
+
+ResNet18's performance demonstrates the effectiveness of residual connections in medical image analysis, while the custom CNN's improvement with augmentation validates the importance of domain-specific data preprocessing.
+
+\subsubsection{Transfer Learning Effectiveness}
+
+Both ResNet18 and DenseNet121 benefited from ImageNet pre-training, despite the domain gap between natural and medical images. This suggests that low-level features learned on natural images are transferable to medical imaging applications.
+
+\subsection{Data Augmentation Analysis}
+
+The substantial improvement achieved through data augmentation (+9.46\% accuracy) highlights several key benefits:
+
+\begin{itemize}
+\item \textbf{Increased Data Diversity:} Augmentation effectively increases training data variety without additional annotation costs
+\item \textbf{Improved Generalization:} Models become more robust to variations in image acquisition parameters
+\item \textbf{Class Balance Enhancement:} Augmentation helps address the inherent class imbalance in medical datasets
+\item \textbf{Overfitting Reduction:} Prevents memorization of specific image characteristics
+\end{itemize}
+
+\subsection{Limitations and Challenges}
+
+Several limitations should be acknowledged:
+
+\begin{itemize}
+\item \textbf{Dataset Scope:} Single-institution data may limit generalizability
+\item \textbf{Binary Classification:} Current approach does not distinguish between pneumonia types (viral vs bacterial)
+\item \textbf{Localization:} Models do not provide spatial localization of pathological regions
+\item \textbf{External Validation:} Performance on external datasets requires further investigation
+\end{itemize}
+
+\section{Future Work}
+
+Several research directions emerge from this study:
+
+\subsection{Model Enhancement}
+
+\begin{itemize}
+\item \textbf{Ensemble Methods:} Combining multiple architectures for improved performance and reliability
+\item \textbf{Attention Mechanisms:} Implementing attention layers for model interpretability
+\item \textbf{Multi-class Classification:} Extending to distinguish pneumonia subtypes
+\item \textbf{Localization Integration:} Incorporating object detection for spatial pneumonia localization
+\end{itemize}
+
+\subsection{Clinical Integration}
+
+\begin{itemize}
+\item \textbf{External Validation:} Testing on diverse datasets from multiple institutions
+\item \textbf{Radiologist Comparison:} Conducting reader studies comparing model and expert performance
+\item \textbf{Deployment Studies:} Evaluating real-world clinical workflow integration
+\item \textbf{Cost-effectiveness Analysis:} Assessing economic impact of automated screening
+\end{itemize}
+
+\subsection{Technical Advances}
+
+\begin{itemize}
+\item \textbf{Explainable AI:} Implementing Grad-CAM and LIME for model interpretability
+\item \textbf{Federated Learning:} Enabling privacy-preserving collaborative learning across institutions
+\item \textbf{Model Compression:} Optimizing models for mobile and edge deployment
+\item \textbf{Multi-modal Integration:} Combining imaging with patient clinical data
+\end{itemize}
+%%%% supcon part
+
+
+
+
+%%%%%%%%%%%%%%%%
+
+
+
+
+
+
+
+
+\section{Conclusion}
+
+This comprehensive study evaluated four deep learning approaches for automated pneumonia detection from chest X-ray images. Key findings include:
+
+\begin{enumerate}
+\item \textbf{DenseNet121 Superior Performance:} Achieved highest accuracy (89.10\%) and best clinical metrics, establishing it as the recommended architecture for balanced pneumonia detection systems.
+
+\item \textbf{Critical Role of Data Augmentation:} Medical imaging-specific augmentation improved CNN performance by 9.46\%, transforming an unreliable baseline into a clinically viable system.
+
+\item \textbf{Transfer Learning Effectiveness:} Pre-trained models consistently outperformed custom architectures, demonstrating the value of ImageNet features for medical imaging.
+
+\item \textbf{Clinical Viability:} All advanced models achieved pneumonia sensitivity >95\%, meeting requirements for clinical screening applications.
+\end{enumerate}
+
+The study establishes practical benchmarks for pneumonia detection research and provides implementation guidelines for clinical deployment. Our open-source implementation facilitates reproducibility and further research in automated medical image analysis.
+
+For clinical deployment, we recommend DenseNet121 for balanced screening applications, ResNet18 for high-sensitivity scenarios, and augmented CNN for resource-constrained environments. Future work should focus on external validation, multi-class classification, and explainable AI integration to enhance clinical adoption and trust.
+
+\begin{thebibliography}{00}
+
+\bibitem{lecun2015deep} Y. LeCun, Y. Bengio, and G. Hinton, "Deep learning," Nature, vol. 521, no. 7553, pp. 436-444, 2015.
+
+\bibitem{rajpurkar2017chexnet} P. Rajpurkar et al., "CheXNet: Radiologist-level pneumonia detection on chest X-rays with deep learning," arXiv preprint arXiv:1711.05225, 2017.
+
+\bibitem{krizhevsky2012imagenet} A. Krizhevsky, I. Sutskever, and G. E. Hinton, "ImageNet classification with deep convolutional neural networks," in Advances in Neural Information Processing Systems, 2012, pp. 1097-1105.
+
+\bibitem{kermany2018medical} D. S. Kermany et al., "Identifying medical diagnoses and treatable diseases by image-based deep learning," Cell, vol. 172, no. 5, pp. 1122-1131, 2018.
+
+\bibitem{shorten2019survey} C. Shorten and T. M. Khoshgoftaar, "A survey on image data augmentation for deep learning," Journal of Big Data, vol. 6, no. 1, pp. 1-48, 2019.
+
+\end{thebibliography}
+
+\end{document}
